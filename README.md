@@ -32,6 +32,38 @@ pnpm dev
 
 `pnpm dev` 启动 TypeScript 工作区中的 Web、Gateway 和 Agent Runner，Python Worker 单独启动。基础演示不依赖 Docker。
 
+### 使用 Docker 启动完整模板
+
+如果本机已安装 Docker Desktop 或 OrbStack，可以直接启动完整栈：
+
+```bash
+pnpm docker:up
+```
+
+首次启动会构建四个应用镜像，并启动 PostgreSQL、Redis、Web、Gateway、Agent Runner 和 Python Worker。访问地址与本地启动方式一致：
+
+| 服务               | 地址                         |
+| ------------------ | ---------------------------- |
+| 创作画布           | http://localhost:3000        |
+| 网关健康检查       | http://localhost:4000/health |
+| 网关 API 文档      | http://localhost:4000/docs   |
+| Agent 健康检查     | http://localhost:4100/health |
+| Python Worker 文档 | http://localhost:4200/docs   |
+
+停止完整栈：
+
+```bash
+pnpm docker:down
+```
+
+仅启动 PostgreSQL 和 Redis：
+
+```bash
+pnpm infra:up
+```
+
+Docker 编排文件位于 `infra/docker/docker-compose.full.yml`，应用镜像定义位于 `infra/docker/Dockerfile.node` 和 `infra/docker/Dockerfile.worker`。
+
 | 入口           | 地址                         |
 | -------------- | ---------------------------- |
 | 创作画布       | http://localhost:3000        |
@@ -63,7 +95,7 @@ pnpm db:migrate
 pnpm db:generate
 ```
 
-Compose 提供 PostgreSQL 和 Redis，端口均绑定本机；凭据仅适用于开发。示例表 `template_records` 与初始 SQL 迁移用于演示数据库工具，并未接入业务接口。对象存储在接入 S3 兼容适配器后配置 `.env` 中的 `S3_*` 参数；模板尚未实现上传或创建 bucket。BullMQ 工厂没有默认消费者，Python Worker 尚未接入队列。`pnpm infra:down` 停止容器并保留数据卷。
+基础 Compose 提供 PostgreSQL 和 Redis，端口均绑定本机；凭据仅适用于开发。示例表 `template_records` 与初始 SQL 迁移用于演示数据库工具，并未接入业务接口。对象存储在接入 S3 兼容适配器后配置 `.env` 中的 `S3_*` 参数；模板尚未实现上传或创建 bucket。BullMQ 工厂没有默认消费者，Python Worker 尚未接入队列。`pnpm infra:down` 停止基础设施容器并保留数据卷。
 
 ## 项目结构
 
