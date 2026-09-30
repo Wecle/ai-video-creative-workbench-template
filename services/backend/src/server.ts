@@ -2,11 +2,10 @@ import { buildApp } from "./app";
 import { startTelemetry } from "@creative/observability";
 
 const telemetry = startTelemetry(
-  process.env.OTEL_SERVICE_NAME ?? "creative-gateway",
+  process.env.OTEL_SERVICE_NAME ?? "creative-backend",
 );
 const app = buildApp();
 let closing = false;
-
 async function shutdown() {
   if (closing) return;
   closing = true;
@@ -18,14 +17,12 @@ async function shutdown() {
     process.exitCode = 1;
   }
 }
-
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
-
 try {
   await app.listen({
     host: process.env.HOST ?? "127.0.0.1",
-    port: Number(process.env.GATEWAY_PORT ?? 4000),
+    port: Number(process.env.BACKEND_PORT ?? 4001),
   });
 } catch (error) {
   app.log.error(error);

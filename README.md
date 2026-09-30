@@ -1,28 +1,13 @@
 # AI Video Creative Workbench Template
 
-面向 AI 视频创作工具的 monorepo 技术模板：React Flow 创作画布、Next.js 前端、Fastify 网关、TypeScript Agent 服务与 Python 媒体工作进程边界。无需模型密钥或数据库即可运行基础演示。
+面向 AI 视频创作工具的 monorepo 模板：Next.js 前端、Fastify 后端、Agent Runner、媒体 Worker，以及可扩展的 Skill 和 MCP 能力目录。
 
-[Use this template](https://github.com/Wecle/ai-video-creative-workbench-template/generate) · [架构与扩展边界](docs/architecture.md)
+> [!NOTE]
+> 当前仓库是技术脚手架。画布和 Agent 使用演示实现，不包含完整业务、模型调用或生产级鉴权。
 
-## 技术栈与模板能力
+## 快速开始
 
-| 模块           | 技术栈                                                               | 已包含的基础能力                                           |
-| -------------- | -------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 前端           | Next.js 15、React 19、React Flow、Tailwind CSS 4、shadcn/ui 基础组件 | 节点添加、拖动、连线、删除、标题编辑、重置、JSON 导出      |
-| 前端状态与表单 | TanStack Query、Zustand、React Hook Form、Zod                        | 网关健康查询、会话内画布状态、表单校验                     |
-| 网关           | Fastify、Zod、Swagger/OpenAPI、Helmet、rate-limit                    | 健康检查、演示数据接口、API 文档、请求校验、进程内 IP 限流 |
-| Agent          | TypeScript、Fastify、可替换 Adapter                                  | 运行/事件/工具/Skill 类型、同步 Echo 演示、独立服务入口    |
-| 媒体 Worker    | Python 3.12+、FastAPI、Pydantic、uv                                  | 健康检查、任务参数校验、独立启动与测试                     |
-| 数据库         | Drizzle ORM、PostgreSQL、drizzle-kit                                 | 服务端连接工厂、示例表、迁移生成与执行配置                 |
-| 队列与遥测     | BullMQ、Redis、OpenTelemetry、OTLP                                   | 可选队列工厂、手动 trace span 与可选 trace 导出            |
-| 工程工具       | pnpm、Turborepo、TypeScript、ESLint、Prettier、Vitest、Ruff、pytest  | 锁文件、工作区依赖、构建与 GitHub Actions 检查             |
-
-> [!IMPORTANT]
-> 这是技术脚手架。画布修改仅保存在当前页面内存，导出可保存为 JSON。Agent 演示只返回 Echo 结果；Python 接口只校验任务，不入队或执行。完整 Agent loop、上下文管理、鉴权、计费、生成供应商、持久化、协作同步、Skill/MCP 执行等属于后续产品实现。
-
-## 快速启动
-
-准备 Node.js 22.9+ 与 pnpm 10.13.1。在 GitHub 使用模板创建自己的仓库后：
+环境：Node.js 22.9+、pnpm 10.13.1；Python Worker 需要 Python 3.12+ 和 uv。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -30,110 +15,111 @@ cp .env.example .env
 pnpm dev
 ```
 
-`pnpm dev` 启动 TypeScript 工作区中的 Web、Gateway 和 Agent Runner，Python Worker 单独启动。基础演示不依赖 Docker。
+默认启动：Web、Gateway、Backend、Agent Runner。媒体 Worker 单独启动：
 
-### 使用 Docker 启动完整模板
+```bash
+pnpm dev:worker
+```
 
-如果本机已安装 Docker Desktop 或 OrbStack，可以直接启动完整栈：
+完整 Docker 栈：
 
 ```bash
 pnpm docker:up
-```
-
-首次启动会构建四个应用镜像，并启动 PostgreSQL、Redis、Web、Gateway、Agent Runner 和 Python Worker。访问地址与本地启动方式一致：
-
-| 服务               | 地址                         |
-| ------------------ | ---------------------------- |
-| 创作画布           | http://localhost:3000        |
-| 网关健康检查       | http://localhost:4000/health |
-| 网关 API 文档      | http://localhost:4000/docs   |
-| Agent 健康检查     | http://localhost:4100/health |
-| Python Worker 文档 | http://localhost:4200/docs   |
-
-停止完整栈：
-
-```bash
 pnpm docker:down
 ```
 
-仅启动 PostgreSQL 和 Redis：
-
-```bash
-pnpm infra:up
-```
-
-Docker 编排文件位于 `infra/docker/docker-compose.full.yml`，应用镜像定义位于 `infra/docker/Dockerfile.node` 和 `infra/docker/Dockerfile.worker`。
-
-| 入口           | 地址                         |
-| -------------- | ---------------------------- |
-| 创作画布       | http://localhost:3000        |
-| 网关健康检查   | http://localhost:4000/health |
-| 网关 API 文档  | http://localhost:4000/docs   |
-| Agent 健康检查 | http://localhost:4100/health |
-
-服务默认仅监听 `127.0.0.1`。Web、Gateway 与 Agent Runner 的启动脚本统一加载根目录 `.env`，shell 注入的同名环境变量优先。修改 `GATEWAY_URL` 后需重启开发服务；生产环境的代理目标在构建时确定，因此需要重新构建 Web。默认目标是 `http://127.0.0.1:4000`。Python 启动命令中的端口单独指定。
-
-### Python Worker
-
-准备 Python 3.12+ 与 uv（CI 使用 uv 0.8.22），在另一个终端执行：
-
-```bash
-cd workers/media-worker-python
-uv sync --frozen
-uv run uvicorn src.main:app --reload --host 127.0.0.1 --port 4200
-```
-
-入口为 http://localhost:4200/health 与 http://localhost:4200/docs。也可在安装依赖后从仓库根目录运行 `pnpm dev:worker`。
-
-### 可选基础设施与数据库
-
-```bash
-pnpm infra:up
-# 检查已附带的示例 SQL 与 DATABASE_URL 后，再执行迁移
-pnpm db:migrate
-# 修改 schema 后生成下一次迁移
-pnpm db:generate
-```
-
-基础 Compose 提供 PostgreSQL 和 Redis，端口均绑定本机；凭据仅适用于开发。示例表 `template_records` 与初始 SQL 迁移用于演示数据库工具，并未接入业务接口。对象存储在接入 S3 兼容适配器后配置 `.env` 中的 `S3_*` 参数；模板尚未实现上传或创建 bucket。BullMQ 工厂没有默认消费者，Python Worker 尚未接入队列。`pnpm infra:down` 停止基础设施容器并保留数据卷。
+| 组件            | 地址                       |
+| --------------- | -------------------------- |
+| Web             | http://localhost:3000      |
+| Gateway         | http://localhost:4000      |
+| API 文档        | http://localhost:4000/docs |
+| Backend（调试） | http://localhost:4001      |
+| Agent Runner    | http://localhost:4100      |
+| Media Worker    | http://localhost:4200      |
 
 ## 项目结构
 
+标记：`[active]` 为当前运行实现，`[reserved]` 为只保留说明的扩展边界。
+
 ```text
-apps/
-  web/                     Next.js 创作画布演示
-services/
-  gateway/                 浏览器 API 入口
-  agent-runner/            独立 Agent Adapter 服务
-  control-plane/           项目/资产/任务业务边界（预留）
-  realtime/                实时事件边界（预留）
-  webhook-ingress/         供应商回调边界（预留）
-packages/
-  ui/                      共享 UI 组件与 shadcn 配置
-  contracts/               浏览器安全的校验规则与协议类型
-  api-client/              带响应校验和超时的 HTTP 客户端
-  agent-core/              Agent 接口与 Echo Adapter
-  database/                服务端 Drizzle 与迁移工具
-  job-queue/               可选 BullMQ 队列工厂
-  observability/           可选 OpenTelemetry trace 导出
-  domain/                  领域规则（预留）
-  node-registry/           节点注册（预留）
-  agent-policy/            权限/预算/审批策略（预留）
-  tool-runtime/            工具调用执行（预留）
-  skill-runtime/           Skill 加载与执行（预留）
-  mcp-adapter/              MCP 连接适配（预留）
-workers/
-  media-worker-python/     Python 健康检查与任务校验
-skills/                    应用 Skill 定义目录（预留）
-mcp-servers/               应用 MCP Server 目录（预留）
-tests/                     跨服务测试目录（预留）
-infra/docker/              开发基础设施
-docs/                      架构与扩展说明
+.
+├── apps/
+│   └── web/                         # [active] Next.js 前端、React Flow 画布和业务界面
+│       ├── app/                     # 路由、布局和全局样式
+│       └── features/                # 画布、工作区等前端功能
+├── services/
+│   ├── gateway/                      # [active] 独立公网入口、限流和 Backend 代理
+│   │   ├── src/                      # Gateway 路由、代理和服务启动
+│   │   └── test/                     # Gateway 测试
+│   ├── backend/                     # [active] 产品后端和业务 API
+│   │   ├── src/                     # Fastify 路由、校验和服务启动
+│   │   ├── modules/
+│   │   │   ├── control-plane/       # [reserved] 项目、工作区和任务控制
+│   │   │   ├── realtime/            # [reserved] SSE/WebSocket 和运行事件推送
+│   │   │   └── webhooks/            # [reserved] 外部供应商回调
+│   │   └── test/                    # 后端测试
+│   └── agent-runner/                # [active] Agent 执行宿主
+│       ├── src/                     # Agent 请求、执行和服务启动
+│       └── test/                    # Agent 服务测试
+├── workers/
+│   └── media-worker-python/         # [active] Python 媒体任务接口和处理 Worker
+├── packages/
+│   ├── agent-core/                  # [active] Agent 内核和 Echo 演示 Adapter
+│   │   └── src/
+│   │       ├── context/             # [reserved] 上下文预算、压缩和快照
+│   │       ├── policy/              # [reserved] 权限、预算和审批策略
+│   │       ├── tools/runtime/       # [reserved] Tool Calling 生命周期
+│   │       ├── tools/adapters/mcp/  # [reserved] MCP Client 和传输适配
+│   │       └── skills/runtime/      # [reserved] Skill 加载和执行
+│   ├── api-client/                  # Web 等客户端使用的类型化 API Client
+│   ├── contracts/                   # API、事件、任务和能力声明
+│   ├── database/                    # 服务端 Drizzle/PostgreSQL 连接和迁移
+│   ├── domain/                      # [reserved] 跨服务领域模型和规则
+│   ├── job-queue/                   # BullMQ 队列工厂和任务基础设施
+│   ├── node-registry/               # [reserved] 画布节点定义和配置注册
+│   ├── observability/               # OpenTelemetry 日志、指标和 Trace 支撑
+│   └── ui/                          # 共享 shadcn/ui 源码和基础组件
+├── capabilities/
+│   ├── skills/                      # [reserved] 版本化 Skill 定义和元数据
+│   ├── mcp-servers/                 # [reserved] 具体 MCP Server
+│   └── tool-manifests/              # [reserved] Tool、权限和传输声明
+├── infra/
+│   └── docker/                      # 本地基础设施和完整 Docker Compose
+├── docs/                            # 架构和扩展边界说明
+├── tests/                           # 跨服务、契约和端到端测试位置
+├── scripts/                         # [reserved] 工程和验证脚本位置
+├── .env.example                     # 本地环境变量模板
+├── package.json                     # 根脚本和工具依赖
+├── pnpm-workspace.yaml              # pnpm workspace 范围
+├── turbo.json                       # Turborepo 任务配置
+└── tsconfig.json                    # TypeScript 基础配置
 ```
 
-标注“预留”的目录仅包含职责说明，没有运行进程或完整实现。初期可按需要合并边界，待规模与团队职责明确后再独立部署。Drizzle 仅供服务端使用，前端通过 Gateway/API Client 访问数据。
+## 依赖边界
 
-## 检查与生产构建
+```text
+apps/web ──> gateway ──> backend
+    └── api-client / ui / contracts
+
+services/gateway ──> contracts / observability
+services/backend ──> contracts / observability
+services/backend (future modules) ──> domain / database / job-queue
+services/agent-runner ──> agent-core / contracts / observability
+workers/media-worker-python ──> contracts + Python runtime adapters
+
+agent-core
+    ├── context / policy / tools / skills
+    └── capabilities/skills + capabilities/mcp-servers
+```
+
+- `apps/web` 负责用户界面；`packages/ui` 只提供共享基础组件。
+- `services/gateway` 是独立发布的公网入口；`services/backend` 是独立发布的业务服务。
+- `services/backend` 负责业务 API 和未来的控制面、实时、回调模块，不承担网关职责。
+- `services/agent-runner` 负责长时 Agent 执行；`packages/agent-core` 是可复用内核。
+- `packages/contracts` 定义跨进程数据；`database`、`job-queue`、`observability` 属于服务端基础设施。
+- `capabilities/` 存放可加载或独立运行的能力资产，不等同于 Agent Runtime。
+
+## 检查命令
 
 ```bash
 pnpm lint
@@ -143,24 +129,13 @@ pnpm test
 pnpm build
 ```
 
-构建后可在独立终端分别运行：
+Python Worker：
 
 ```bash
-pnpm --filter @creative/web start
-pnpm --filter @creative/gateway start
-pnpm --filter @creative/agent-runner start
-```
-
-Python 检查在 Worker 目录运行：
-
-```bash
+cd workers/media-worker-python
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest
 ```
 
-共享 TypeScript 包直接导出源码，供工作区工具使用；服务构建会打包所需工作区源码，第三方运行依赖仍需安装。可通过 `apps/web/components.json` 与 `packages/ui/components.json` 扩展共享 UI 组件。
-
-## 进入产品开发前
-
-当前 HTTP 服务未实现身份认证，不应直接暴露到公网。需要补齐租户授权、审计、分布式限流与并发准入、任务幂等和取消、持久化 Agent 状态、上下文预算、工具审批及 Skill/MCP 隔离。OpenTelemetry SDK 开源，Collector/存储/可视化后端需自行配置；只有配置 OTLP endpoint 才开启本模板的 trace 导出。详见[架构说明](docs/architecture.md)。
+更多架构边界见 [docs/architecture.md](docs/architecture.md)。

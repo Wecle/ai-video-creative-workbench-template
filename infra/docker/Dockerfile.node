@@ -26,5 +26,5 @@ RUN chown -R node:node /workspace
 USER node
 WORKDIR /workspace
 
-EXPOSE 3000 4000 4100
+EXPOSE 3000 4000 4001 4100
 CMD ["sh", "-c", "pnpm --filter ${APP} start"]

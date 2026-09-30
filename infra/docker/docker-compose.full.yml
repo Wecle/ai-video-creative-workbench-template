@@ -25,19 +25,19 @@ services:
       timeout: 3s
       retries: 10
 
-  gateway:
+  backend:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.node
       args:
-        APP: "@creative/gateway"
+        APP: "@creative/backend"
     environment:
       HOST: 0.0.0.0
-      GATEWAY_PORT: 4000
+      BACKEND_PORT: 4001
       DATABASE_URL: postgresql://template:template@postgres:5432/template
       REDIS_URL: redis://redis:6379
     ports:
-      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:4001:4001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,7 +49,34 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:4000/health').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))",
+          "fetch('http://127.0.0.1:4001/health').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.node
+      args:
+        APP: "@creative/gateway"
+    environment:
+      HOST: 0.0.0.0
+      GATEWAY_PORT: 4000
+      BACKEND_URL: http://backend:4001
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/ready').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))",
         ]
       interval: 5s
       timeout: 3s

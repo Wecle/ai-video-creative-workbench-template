@@ -3,7 +3,8 @@
 ## Runnable scaffold
 
 - apps/web: Next.js App Router, React Flow playground, Zustand canvas state, TanStack Query health request and React Hook Form/Zod inspector.
-- services/gateway: Fastify entry point for browser clients; demo reads, OpenAPI, security headers, request limits and in-process IP rate limiting.
+- services/gateway: independently deployable public entry point; security headers, edge rate limiting, Backend readiness and API proxying.
+- services/backend: independently deployable internal business API; demo reads, OpenAPI and domain route boundary.
 - services/agent-runner: separately deployable Fastify service with validated synchronous echo execution.
 - workers/media-worker-python: separately started FastAPI service for health and task validation.
 - packages/contracts: browser-safe Zod contracts and event/task types.
@@ -13,19 +14,19 @@
 - packages/job-queue: optional BullMQ queue factory; no active consumer or scheduler.
 - packages/observability: optional manual OpenTelemetry spans and OTLP trace export.
 
-The default playground needs neither Docker nor model credentials. Services build into standalone ESM entry points that bundle workspace source, while third-party dependencies remain installed runtime dependencies. Shared packages expose TypeScript source for workspace tooling; they are not npm distribution artifacts.
+The default playground needs neither Docker nor model credentials. Gateway and Backend build into separate ESM entry points and can be released independently. Services bundle workspace source, while third-party dependencies remain installed runtime dependencies. Shared packages expose TypeScript source for workspace tooling; they are not npm distribution artifacts.
 
 ## Reserved boundaries
 
-The README-only directories have no package.json, process or implemented runtime. Split them into services/packages when there is a real ownership or scaling need:
+The README-only directories have no package.json, process or implemented runtime. They stay inside the nearest subsystem until a real ownership or scaling need appears:
 
-- control-plane: project, canvas, asset and task use cases; owns database writes.
-- realtime: SSE/WebSocket event delivery, reconnect and replay.
-- webhook-ingress: signature verification and idempotent provider callbacks.
-- node-registry/domain: node definitions and application rules.
-- agent-policy: permission, budget, approval and safety decisions.
-- tool-runtime/skill-runtime/mcp-adapter: validated execution, versioned skills and permission-scoped MCP connections.
-- skills/mcp-servers: application-owned capability definitions and servers.
+- services/backend/modules/control-plane: project, canvas, asset and task use cases.
+- services/backend/modules/realtime: SSE/WebSocket event delivery, reconnect and replay.
+- services/backend/modules/webhooks: signature verification and idempotent provider callbacks.
+- packages/node-registry and packages/domain: node definitions and application rules.
+- packages/agent-core/src/policy: permission, budget, approval and safety decisions.
+- packages/agent-core/src/tools and src/skills: validated execution and versioned runtime boundaries.
+- capabilities/skills and capabilities/mcp-servers: application-owned capability definitions and servers.
 
 Canvas/event/provider protocols can initially live in contracts. Extract them when independent versioning becomes useful. Keep database credentials and ORM imports out of browser-facing packages.
 
@@ -36,7 +37,7 @@ Canvas/event/provider protocols can initially live in contracts. Extract them wh
 3. Add durable task/run storage, idempotency, cancellation, timeout/retry policy and callback validation. Echo completion does not prove a durable Agent loop.
 4. Implement bounded Agent turns, context compaction, tool schemas, approval gates, skill/MCP isolation and replayable checkpoints.
 5. Add S3-compatible object storage adapters, upload restrictions, signed URLs and media scanning. Configure the `S3_*` environment variables after adding an adapter; provisioning storage and buckets is separate from the PostgreSQL/Redis development Compose stack.
-6. Add BFF routes with explicit request/response contracts. The Next.js rewrite is transport plumbing, not authorization or domain orchestration.
+6. Keep BFF routes and edge policy in services/gateway. The Next.js rewrite is transport plumbing, not authorization or domain orchestration.
 7. Define trace/log redaction, sampling, retention and cost metrics. Manual spans contain no prompt or credential payloads; the template provides no Collector or observability storage.
 8. Add database migrations and integration/e2e tests for actual persistence and providers. Review example schema and development credentials before reuse.
 

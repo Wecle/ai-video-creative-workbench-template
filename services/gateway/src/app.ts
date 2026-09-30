@@ -1,37 +1,86 @@
-import Fastify, { type FastifyError } from "fastify";
+import Fastify, {
+  type FastifyError,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import swagger from "@fastify/swagger";
-import swaggerUi from "@fastify/swagger-ui";
-import { z } from "zod";
-import {
-  serializerCompiler,
-  validatorCompiler,
-  jsonSchemaTransform,
-  type ZodTypeProvider,
-} from "fastify-type-provider-zod";
-import {
-  canvasDocumentSchema,
-  demoCanvasDocument,
-  healthSchema,
-} from "@creative/contracts";
-import { withSpan } from "@creative/observability";
 
-export function buildApp({ logger = true }: { logger?: boolean } = {}) {
+const hopByHopHeaders = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+type GatewayOptions = {
+  logger?: boolean;
+  backendUrl?: string;
+  fetcher?: typeof fetch;
+};
+
+function copyRequestHeaders(request: FastifyRequest) {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (hopByHopHeaders.has(name.toLowerCase()) || value === undefined)
+      continue;
+    headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+  }
+  return headers;
+}
+
+function serializeBody(request: FastifyRequest) {
+  if (request.method === "GET" || request.method === "HEAD") return undefined;
+  if (request.body === undefined) return undefined;
+  if (typeof request.body === "string") return request.body;
+  if (Buffer.isBuffer(request.body)) return request.body;
+  return JSON.stringify(request.body);
+}
+
+async function proxyRequest(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  backendUrl: string,
+  fetcher: typeof fetch,
+) {
+  const target = new URL(request.url, backendUrl);
+  let response: Response;
+  try {
+    response = await fetcher(target, {
+      method: request.method,
+      headers: copyRequestHeaders(request),
+      body: serializeBody(request) as BodyInit | undefined,
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    request.log.error({ err: error }, "Backend request failed");
+    return reply.code(502).send({ error: "Backend unavailable" });
+  }
+
+  for (const [name, value] of response.headers) {
+    if (!hopByHopHeaders.has(name.toLowerCase())) reply.header(name, value);
+  }
+  return reply
+    .code(response.status)
+    .send(Buffer.from(await response.arrayBuffer()));
+}
+
+export function buildApp({
+  logger = true,
+  backendUrl = process.env.BACKEND_URL ?? "http://127.0.0.1:4001",
+  fetcher = fetch,
+}: GatewayOptions = {}) {
   const app = Fastify({
     logger,
     bodyLimit: 1024 * 1024,
     requestTimeout: 10000,
-  }).withTypeProvider<ZodTypeProvider>();
-  app.setValidatorCompiler(validatorCompiler);
-  app.setSerializerCompiler(serializerCompiler);
+  });
   app.register(helmet, { contentSecurityPolicy: false });
   app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
-  app.register(swagger, {
-    openapi: { info: { title: "Creative Gateway", version: "0.1.0" } },
-    transform: jsonSchemaTransform,
-  });
-  app.register(swaggerUi, { routePrefix: "/docs" });
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error.validation)
       return reply.code(400).send({ error: "Invalid request" });
@@ -41,41 +90,35 @@ export function buildApp({ logger = true }: { logger?: boolean } = {}) {
       .code(code)
       .send({ error: code >= 500 ? "Internal server error" : error.message });
   });
-  // Register routes after plugins so onRoute hooks see every endpoint.
+
   app.register(async (instance) => {
-    const app = instance.withTypeProvider<ZodTypeProvider>();
-    app.get(
-      "/health",
-      { schema: { response: { 200: healthSchema } } },
-      async () => ({ status: "ok" as const, service: "gateway" }),
-    );
-    app.get("/ready", async () => ({
-      status: "ready",
-      mode: "template",
-      dependencies: { database: "unused", redis: "unused" },
+    instance.get("/health", async () => ({
+      status: "ok" as const,
+      service: "gateway" as const,
     }));
-    app.get("/api/v1/projects", async () => ({
-      projects: [
-        { id: "demo-project", name: "Demo Creative Project", status: "draft" },
-      ],
-    }));
-    app.get(
-      "/api/v1/canvases/:canvasId/document",
-      {
-        schema: {
-          params: z.object({ canvasId: z.string().min(1).max(100) }),
-          response: {
-            200: canvasDocumentSchema,
-            404: z.object({ error: z.string() }),
-          },
-        },
-      },
-      async (request, reply) => {
-        if (request.params.canvasId !== "demo")
-          return reply.code(404).send({ error: "Canvas not found" });
-        return withSpan("gateway.demo-canvas", async () => demoCanvasDocument);
-      },
-    );
+    instance.get("/ready", async (_request, reply) => {
+      try {
+        const response = await fetcher(new URL("/health", backendUrl), {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!response.ok) throw new Error("Backend health check failed");
+        return { status: "ready", dependencies: { backend: "ready" } };
+      } catch (error) {
+        reply.code(503);
+        return {
+          status: "not_ready",
+          dependencies: { backend: "unavailable" },
+          error: error instanceof Error ? error.message : "Backend unavailable",
+        };
+      }
+    });
+
+    const forward = (request: FastifyRequest, reply: FastifyReply) =>
+      proxyRequest(request, reply, backendUrl, fetcher);
+    instance.all("/api/v1/*", forward);
+    instance.all("/docs", forward);
+    instance.all("/docs/*", forward);
   });
+
   return app;
 }

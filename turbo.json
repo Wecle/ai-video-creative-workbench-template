@@ -8,6 +8,8 @@
         "GATEWAY_URL",
         "HOST",
         "GATEWAY_PORT",
+        "BACKEND_URL",
+        "BACKEND_PORT",
         "AGENT_RUNNER_PORT",
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         "OTEL_SERVICE_NAME",
@@ -17,7 +19,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
-      "env": ["GATEWAY_URL"],
+      "env": ["GATEWAY_URL", "BACKEND_URL"],
       "passThroughEnv": ["NEXT_TELEMETRY_DISABLED"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", ".env*"]
     },

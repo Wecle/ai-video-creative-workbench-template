@@ -1,11 +1,14 @@
 import { defineConfig } from "tsup";
-
 export default defineConfig({
   entry: ["src/server.ts"],
   format: ["esm"],
-  clean: true,
-  sourcemap: true,
-  bundle: true,
-  noExternal: ["@creative/contracts", "@creative/observability"],
+  platform: "node",
   target: "node22",
+  clean: true,
+  noExternal: ["@creative/contracts", "@creative/observability"],
+  external: [
+    "@opentelemetry/api",
+    "@opentelemetry/sdk-node",
+    "@opentelemetry/exporter-trace-otlp-http",
+  ],
 });
