@@ -1,0 +1,10 @@
+node_modules/
+pnpm-lock.yaml
+.next/
+.turbo/
+dist/
+coverage/
+*.tsbuildinfo
+outputs/
+work/
+workers/

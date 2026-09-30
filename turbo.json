@@ -1,0 +1,28 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "GATEWAY_URL",
+        "HOST",
+        "GATEWAY_PORT",
+        "AGENT_RUNNER_PORT",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_SERVICE_NAME",
+        "NEXT_TELEMETRY_DISABLED"
+      ]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": ["GATEWAY_URL"],
+      "passThroughEnv": ["NEXT_TELEMETRY_DISABLED"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", ".env*"]
+    },
+    "lint": { "dependsOn": ["^lint"] },
+    "typecheck": { "dependsOn": ["^typecheck"] },
+    "test": { "dependsOn": ["^test"], "outputs": [] }
+  }
+}

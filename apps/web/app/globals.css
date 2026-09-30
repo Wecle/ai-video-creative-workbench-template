@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+@source "../../../packages/ui/src";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #f5f5f5;
+  --muted: #171717;
+  --muted-foreground: #a3a3a3;
+  --border: #303030;
+  --input: #404040;
+  --primary: #f5f5f5;
+  --primary-foreground: #0a0a0a;
+  --accent: #242424;
+  --accent-foreground: #f5f5f5;
+  --ring: #a78bfa;
+}
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-ring: var(--ring);
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  min-height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+button,
+input,
+textarea {
+  font: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.react-flow {
+  --xy-controls-button-background-color-default: #242424;
+  --xy-controls-button-color-default: #f5f5f5;
+  --xy-controls-button-background-color-hover-default: #404040;
+  --xy-controls-button-border-color-default: #404040;
+}

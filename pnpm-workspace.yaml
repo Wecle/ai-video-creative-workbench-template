@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+catalog:
+  typescript: ^5.8.3
+  zod: ^4.0.10
+  vitest: ^4.1.11
+  tsup: ^8.5.0
+onlyBuiltDependencies:
+  - esbuild
+overrides:
+  # Next.js 15 pins PostCSS; use a patched release within the same major.
+  "next>postcss": ^8.5.28
+  esbuild: ^0.28.2
