@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "bullmq": "^5.58.5"
+    "bullmq": "^6.3.9"
   },
   "devDependencies": {
     "typescript": "catalog:"
