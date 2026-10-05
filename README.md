@@ -3,7 +3,7 @@
 面向 AI 视频创作工具的 monorepo 模板：Next.js 前端、Fastify 后端、基于 Temporal 的 Agent 执行层、媒体 Worker，以及可扩展的 Skill 能力目录（MCP 经 ToolProvider 预留）。
 
 > [!NOTE]
-> 当前仓库是技术脚手架。画布和 Agent 使用演示实现，不包含完整业务或模型调用。已接入邮箱密码登录（Better Auth）、Gateway JWT 验签、Redis 限流和 Temporal echo workflow（Backend 启动并查询，Agent Runner 作为 worker 执行）；邮箱验证、找回密码和租户授权尚未实现。
+> 当前仓库是技术脚手架，不包含完整业务或模型调用，Agent 使用 echo 演示实现。已接入邮箱密码登录（Better Auth）、Gateway JWT 验签、Redis 限流和 Temporal echo workflow（Backend 启动并查询，Agent Runner 作为 worker 执行），以及画布骨架：节点定义注册表（2 个示例节点）、Yjs 文档层（撤销重做、连接校验）、项目与画布的保存/读取（workspace 成员授权、乐观锁）、`/projects` 与画布路由、`en`/`zh-CN` 界面文案。节点执行、素材、协作、邮箱验证和找回密码尚未实现。
 
 ## 快速开始
 
@@ -23,7 +23,7 @@ pnpm infra:up      # PostgreSQL、Redis 和 Temporal（登录、限流和 Agent 
 pnpm db:migrate    # 迁移不随服务启动，需要手动执行
 ```
 
-打开 http://localhost:3000 会跳转到 `/login`，先注册账号。
+打开 http://localhost:3000 会跳转到 `/login`，先注册账号；登录后进入 `/projects`，新建项目即可打开画布（`/p/<项目>/canvas/<画布>`，修改约 2 秒后自动保存）。界面语言跟随浏览器（`Accept-Language`），也可在页面上切换 English / 简体中文（写入 `locale` cookie）。
 
 默认启动：Web、Gateway、Backend、Agent Runner（Temporal worker，启动时要求 Temporal 已运行，即先 `pnpm infra:up`）。媒体 Worker 单独启动：
 
@@ -40,6 +40,7 @@ pnpm infra:up && pnpm db:migrate   # 首次或升级后
 pnpm docker:up
 scripts/smoke-p0a.sh               # 冒烟：Gateway 验签与 Backend 信任边界
 scripts/smoke-p0b.sh               # 冒烟：echo workflow 经 Backend、Temporal、Agent Runner 跑通
+scripts/smoke-p1.sh                # 冒烟：项目与画布的保存、409/422、跨 workspace 404（需要 curl、jq）
 pnpm docker:down
 ```
 
@@ -64,7 +65,8 @@ pnpm docker:down
 ├── apps/
 │   └── web/                         # [active] Next.js 前端、React Flow 画布和业务界面
 │       ├── app/                     # 路由、布局和全局样式
-│       └── features/                # 画布、工作区等前端功能
+│       ├── features/                # 画布（每画布一个 store、节点渲染器）、项目列表、登录
+│       └── i18n/                    # 词条（en 为唯一事实来源，zh-CN 可部分翻译）、语言解析与切换
 ├── services/
 │   ├── gateway/                      # [active] 独立公网入口、限流和 Backend 代理
 │   │   ├── src/                      # Gateway 路由、代理和服务启动
@@ -89,10 +91,11 @@ pnpm docker:down
 │   │       ├── tools/runtime/       # [reserved] Tool Calling 生命周期
 │   │       └── skills/runtime/      # [reserved] Skill 加载和执行
 │   ├── api-client/                  # Web 等客户端使用的类型化 API Client
-│   ├── contracts/                   # API、事件、任务和能力声明
+│   ├── canvas-doc/                  # [active] 画布 Yjs 文档层：操作、连接校验、快照、撤销历史（同构）
+│   ├── contracts/                   # API、事件、任务、画布快照和能力声明
 │   ├── database/                    # 服务端 Drizzle/PostgreSQL 连接和迁移
 │   ├── domain/                      # [reserved] 跨服务领域模型和规则
-│   ├── node-registry/               # [reserved] 画布节点定义和配置注册
+│   ├── node-registry/               # [active] 画布节点定义、注册表和 JSON Schema 产物（同构）
 │   ├── observability/               # OpenTelemetry 日志、指标和 Trace 支撑
 │   ├── ui/                          # 共享 shadcn/ui 源码和基础组件
 │   └── workflows/                   # [active] Temporal workflow（仅确定性代码和契约）
@@ -102,7 +105,7 @@ pnpm docker:down
 │   └── docker/                      # 本地基础设施和完整 Docker Compose
 ├── docs/                            # 架构和扩展边界说明
 ├── tests/                           # 跨服务、契约和端到端测试位置
-├── scripts/                         # 冒烟脚本（smoke-p0a.sh、smoke-p0b.sh）
+├── scripts/                         # 冒烟脚本（smoke-p0a.sh、smoke-p0b.sh、smoke-p1.sh）
 ├── .env.example                     # 本地环境变量模板
 ├── package.json                     # 根脚本和工具依赖
 ├── pnpm-workspace.yaml              # pnpm workspace 范围
@@ -117,7 +120,9 @@ apps/web ──> gateway ──> backend
     └── api-client / ui / contracts
 
 services/gateway ──> contracts / observability
-services/backend ──> contracts / observability / workflows
+services/backend ──> contracts / observability / workflows / canvas-doc / node-registry
+apps/web ──> canvas-doc / node-registry（Yjs 只经 canvas-doc 使用）
+packages/canvas-doc ──> node-registry / contracts
 services/backend (future modules) ──> domain / database
 services/agent-runner ──> agent-core / workflows / observability
 workers/media-worker-python ──> contracts + Python runtime adapters
@@ -127,7 +132,8 @@ agent-core
     └── capabilities/skills
 ```
 
-- `apps/web` 负责用户界面；`packages/ui` 只提供共享基础组件。
+- `apps/web` 负责用户界面；`packages/ui` 只提供共享基础组件。画布状态分三层：Document（Yjs，持久化）、Runtime（执行状态，仅类型）、UI（选中、拖拽、保存状态）；Zustand store 是 Yjs 文档的只读派生，每个打开的画布一个实例。
+- `packages/node-registry` 与 `packages/canvas-doc` 是同构包（浏览器与 Node 共用，ESLint 限制导入与全局变量）；新增节点类型的步骤见 `packages/node-registry/README.md`。
 - `services/gateway` 是独立发布的公网入口；`services/backend` 是独立发布的业务服务。
 - `services/backend` 负责业务 API 和未来的控制面、实时、回调模块，不承担网关职责。
 - `services/agent-runner` 是 Temporal worker，负责长时 Agent 执行；`packages/workflows` 只放确定性的 workflow 代码与契约；`packages/agent-core` 是可复用内核。

@@ -20,7 +20,7 @@ describe("backend trusts only the gateway", () => {
     for (const url of [
       "/api/v1/me",
       "/api/v1/projects",
-      "/api/v1/canvases/demo/document",
+      "/api/v1/projects/0f8fad5b-d9cb-469f-a165-70867728950e/canvases/0f8fad5b-d9cb-469f-a165-70867728950e",
       "/docs/json",
       "/no-such-route",
     ])
@@ -42,7 +42,8 @@ describe("backend trusts only the gateway", () => {
   });
 
   it("binds the signature to the pathname, not the query", async () => {
-    const path = "/api/v1/projects";
+    // /docs/json is served without touching the database.
+    const path = "/docs/json";
     const response = await get(`${path}?x=1`, signedHeaders("GET", path, user));
     expect(response.statusCode).toBe(200);
   });
@@ -66,11 +67,13 @@ describe("backend trusts only the gateway", () => {
   });
 
   it("lets a signed user through the hook", async () => {
-    const response = await get(
-      "/api/v1/projects",
-      signedHeaders("GET", "/api/v1/projects", user),
+    // Anonymous is 401 on a business route; a user gets past the hook (here: the
+    // validator answers 400 before any database access).
+    const url = "/api/v1/projects/not-a-uuid/canvases/not-a-uuid";
+    expect((await get(url, signedHeaders("GET", url, user))).statusCode).toBe(
+      400,
     );
-    expect(response.statusCode).toBe(200);
+    expect((await get(url, signedHeaders("GET", url))).statusCode).toBe(401);
   });
 
   it("requires a signature on /docs", async () => {
@@ -82,22 +85,12 @@ describe("backend trusts only the gateway", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().openapi).toMatch(/^3/);
     expect(response.json().paths).toHaveProperty(
-      "/api/v1/canvases/{canvasId}/document",
+      "/api/v1/projects/{projectId}/canvases/{canvasId}/state",
     );
+    expect(response.json().paths).toHaveProperty("/api/v1/projects");
     expect(response.json().paths).toHaveProperty("/api/v1/me");
     // Better Auth routes are not part of the product OpenAPI document.
     expect(Object.keys(response.json().paths)).not.toContain("/api/auth/*");
-  });
-
-  it("serves the demo document and rejects unknown canvases", async () => {
-    const demo = "/api/v1/canvases/demo/document";
-    const missing = "/api/v1/canvases/missing/document";
-    expect(
-      (await get(demo, signedHeaders("GET", demo, user))).json().canvasId,
-    ).toBe("demo");
-    expect(
-      (await get(missing, signedHeaders("GET", missing, user))).statusCode,
-    ).toBe(404);
   });
 
   it("adds security headers", async () => {

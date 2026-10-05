@@ -12,7 +12,9 @@ if (!baseUrl && process.env.CI)
 
 const expectedTables = [
   "accounts",
+  "canvases",
   "jwks",
+  "projects",
   "sessions",
   "users",
   "verifications",
@@ -22,7 +24,7 @@ const expectedTables = [
 ];
 
 describe.skipIf(!baseUrl)("migrations", () => {
-  it("apply to an empty database and create the P0a tables", async () => {
+  it("apply to an empty database and create the application tables", async () => {
     const admin = postgres(baseUrl!, { max: 1 });
     const name = `migrations_${randomBytes(6).toString("hex")}`;
     await admin.unsafe(`CREATE DATABASE "${name}"`);
@@ -53,7 +55,8 @@ describe.skipIf(!baseUrl)("migrations", () => {
             ('users', 'id'), ('workspaces', 'id'),
             ('workspace_members', 'workspace_id'),
             ('workspace_invitations', 'workspace_id'),
-            ('sessions', 'active_workspace_id'))`;
+            ('sessions', 'active_workspace_id'),
+            ('canvases', 'yjs_state'), ('canvases', 'snapshot'))`;
       const types = Object.fromEntries(
         columns.map((c) => [`${c.table_name}.${c.column_name}`, c.data_type]),
       );
@@ -63,7 +66,27 @@ describe.skipIf(!baseUrl)("migrations", () => {
         "workspace_members.workspace_id": "uuid",
         "workspace_invitations.workspace_id": "uuid",
         "sessions.active_workspace_id": "text",
+        "canvases.yjs_state": "bytea",
+        "canvases.snapshot": "jsonb",
       });
+
+      // A canvas cannot claim a workspace other than its project's (composite foreign key).
+      const [first, second] = await client<{ id: string }[]>`
+        insert into workspaces (name, slug, created_at)
+        values ('A', 'a', now()), ('B', 'b', now()) returning id`;
+      const [project] = await client<{ id: string }[]>`
+        insert into projects (workspace_id, name) values (${first!.id}, 'P') returning id`;
+      const insertCanvas = (workspaceId: string) => client`
+        insert into canvases (project_id, workspace_id, name, yjs_state, snapshot, schema_version)
+        values (${project!.id}, ${workspaceId}, 'C', ${Buffer.from([1, 2, 3])}, '{}'::jsonb, 1)`;
+      await expect(insertCanvas(second!.id)).rejects.toThrow(
+        /canvases_project_workspace_fk/,
+      );
+      await insertCanvas(first!.id);
+      const [stored] = await client<{ yjs_state: Buffer; version: number }[]>`
+        select yjs_state, version from canvases`;
+      expect([...stored!.yjs_state]).toEqual([1, 2, 3]);
+      expect(stored!.version).toBe(0);
     } finally {
       await client.end({ timeout: 5 });
       await admin.unsafe(`DROP DATABASE "${name}" WITH (FORCE)`);

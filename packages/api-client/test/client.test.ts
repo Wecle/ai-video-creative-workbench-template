@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createApiClient } from "../src";
+import { ApiError, createApiClient } from "../src";
 
 const me = {
   user: { id: "u1", name: "A", email: "a@example.test", image: null },
@@ -120,6 +120,129 @@ describe("API client", () => {
       const api = createApiClient("", fetcher, { getToken: async () => "t" });
       await expect(api.me()).rejects.toMatchObject({ status: 503 });
       expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("projects and canvases", () => {
+    const projectId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const canvasId = "1f8fad5b-d9cb-469f-a165-70867728950e";
+    const workspaceId = "2f8fad5b-d9cb-469f-a165-70867728950e";
+    const project = {
+      id: projectId,
+      workspaceId,
+      name: "Film",
+      createdAt: "2026-10-05T00:00:00.000Z",
+      canvases: [{ id: canvasId, name: "Main canvas" }],
+    };
+
+    it("saveCanvas sends PUT with a Bearer token and the JSON body", async () => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          json({ version: 3, updatedAt: "2026-10-05T00:00:00.000Z" }),
+        );
+      const api = createApiClient("/gateway", fetcher, {
+        getToken: async () => "tok",
+      });
+      expect(
+        await api.saveCanvas(projectId, canvasId, {
+          baseVersion: 2,
+          state: "AAAA",
+        }),
+      ).toEqual({
+        version: 3,
+        updatedAt: "2026-10-05T00:00:00.000Z",
+      });
+      const [url, init] = fetcher.mock.calls[0]!;
+      expect(url).toBe(
+        `/gateway/api/v1/projects/${projectId}/canvases/${canvasId}/state`,
+      );
+      expect(init?.method).toBe("PUT");
+      expect(new Headers(init?.headers).get("authorization")).toBe(
+        "Bearer tok",
+      );
+      expect(new Headers(init?.headers).get("content-type")).toBe(
+        "application/json",
+      );
+      expect(JSON.parse(init?.body as string)).toEqual({
+        baseVersion: 2,
+        state: "AAAA",
+      });
+    });
+
+    it("surfaces a 409 as an ApiError that carries the response body", async () => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          json(
+            { error: "Canvas was updated elsewhere", currentVersion: 7 },
+            409,
+          ),
+        );
+      const api = createApiClient("", fetcher, { getToken: async () => "t" });
+      const error = await api
+        .saveCanvas(projectId, canvasId, { baseVersion: 1, state: "AAAA" })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error).toMatchObject({ status: 409, body: { currentVersion: 7 } });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries a write once after a 401 with the same body", async () => {
+      const getToken = vi
+        .fn<(o?: { force?: boolean }) => Promise<string>>()
+        .mockResolvedValueOnce("stale")
+        .mockResolvedValueOnce("fresh");
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(new Response(null, { status: 401 }))
+        .mockResolvedValueOnce(
+          json({ version: 1, updatedAt: "2026-10-05T00:00:00.000Z" }),
+        );
+      const api = createApiClient("", fetcher, { getToken });
+      await api.saveCanvas(projectId, canvasId, {
+        baseVersion: 0,
+        state: "AAAA",
+      });
+      expect(fetcher.mock.calls[0]![1]?.body).toBe(
+        fetcher.mock.calls[1]![1]?.body,
+      );
+      expect(authorizationOf(fetcher.mock.calls[1]!)).toBe("Bearer fresh");
+    });
+
+    it("creates and lists projects, validating responses", async () => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ project }, 201))
+        .mockResolvedValueOnce(json({ projects: [project] }))
+        .mockResolvedValueOnce(json({ projects: [{ id: "x" }] }));
+      const api = createApiClient("", fetcher, { getToken: async () => "t" });
+      expect((await api.createProject({ name: "Film" })).project.id).toBe(
+        projectId,
+      );
+      expect(fetcher.mock.calls[0]![1]?.method).toBe("POST");
+      expect((await api.listProjects()).projects).toHaveLength(1);
+      await expect(api.listProjects()).rejects.toThrow();
+    });
+
+    it("getCanvas validates the response", async () => {
+      const canvas = {
+        id: canvasId,
+        projectId,
+        name: "Main",
+        version: 0,
+        updatedAt: "2026-10-05T00:00:00.000Z",
+      };
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ canvas, state: "AAAA" }))
+        .mockResolvedValueOnce(json({ canvas: { id: 1 } }));
+      const api = createApiClient("", fetcher, { getToken: async () => "t" });
+      expect((await api.getCanvas(projectId, canvasId)).state).toBe("AAAA");
+      expect(fetcher.mock.calls[0]![0]).toBe(
+        `/api/v1/projects/${projectId}/canvases/${canvasId}`,
+      );
+      await expect(api.getCanvas(projectId, canvasId)).rejects.toThrow();
     });
   });
 });

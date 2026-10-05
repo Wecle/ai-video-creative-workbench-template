@@ -7,7 +7,7 @@ import { LogOut } from "lucide-react";
 import { Button } from "@creative/ui";
 import { authClient } from "../../lib/auth-client";
 import { clearAccessToken } from "../../lib/access-token";
-import { authCopy as copy } from "./copy";
+import { useT } from "../../i18n/client";
 
 export function UserMenu({
   email,
@@ -16,6 +16,7 @@ export function UserMenu({
   email?: string;
   workspace?: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
@@ -41,7 +42,7 @@ export function UserMenu({
       )}
       <Button variant="outline" onClick={signOut} disabled={pending}>
         <LogOut />
-        {pending ? copy.workspace.signingOut : copy.workspace.signOut}
+        {pending ? t("common.signingOut") : t("common.signOut")}
       </Button>
     </div>
   );

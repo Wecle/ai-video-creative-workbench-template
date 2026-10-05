@@ -3,4 +3,86 @@
 // configuration in services/backend/src/auth/auth.ts. Do not edit auth-schema.ts by
 // hand: change the configuration and run `pnpm auth:generate`.
 // Application tables are added here as later phases need them.
+import { sql } from "drizzle-orm";
+import {
+  customType,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { users, workspaces } from "./auth-schema";
+
 export * from "./auth-schema";
+
+/** Postgres bytea as a Uint8Array (drizzle has no built-in column for it). */
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+  dataType: () => "bytea",
+});
+
+export const projects = pgTable(
+  "projects",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    // Target of canvases' composite foreign key.
+    unique("projects_id_workspace_id_unique").on(table.id, table.workspaceId),
+    index("projects_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+/**
+ * One row per canvas: the authoritative Yjs state, the JSON snapshot derived from it by
+ * the server, and an integer `version` for optimistic locking. `workspace_id` repeats the
+ * project's workspace so authorization needs only a join with workspace_members; the
+ * composite foreign key makes the database keep the two in agreement.
+ */
+export const canvases = pgTable(
+  "canvases",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    projectId: uuid("project_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
+    name: text("name").notNull(),
+    yjsState: bytea("yjs_state").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+    version: integer("version").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.projectId, table.workspaceId],
+      foreignColumns: [projects.id, projects.workspaceId],
+      name: "canvases_project_workspace_fk",
+    }).onDelete("cascade"),
+    index("canvases_project_id_idx").on(table.projectId),
+    index("canvases_workspace_id_idx").on(table.workspaceId),
+  ],
+);

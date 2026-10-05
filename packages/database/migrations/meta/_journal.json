@@ -8,6 +8,13 @@
       "when": 1791173972702,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791181022834,
+      "tag": "0001_p1_projects_canvases",
+      "breakpoints": true
     }
   ]
 }

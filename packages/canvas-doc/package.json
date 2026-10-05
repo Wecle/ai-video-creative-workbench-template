@@ -1,0 +1,26 @@
+{
+  "name": "@creative/canvas-doc",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "make-state": "tsx scripts/make-state.ts"
+  },
+  "dependencies": {
+    "@creative/contracts": "workspace:*",
+    "@creative/node-registry": "workspace:*",
+    "yjs": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

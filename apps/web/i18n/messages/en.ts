@@ -1,0 +1,148 @@
+/**
+ * English catalog: the single source of truth for message keys. Other locales translate a
+ * subset; anything missing falls back to these strings. Placeholders use `{name}`.
+ * Node display names and port labels live under `nodes.<type>.*` (see node-registry).
+ */
+export const en = {
+  common: {
+    appName: "Creative Workbench",
+    loading: "Loading…",
+    create: "Create",
+    creating: "Creating…",
+    retry: "Try again",
+    genericError: "Something went wrong. Please try again.",
+    signOut: "Sign out",
+    signingOut: "Signing out…",
+  },
+  locale: {
+    label: "Language",
+    en: "English",
+    "zh-CN": "简体中文",
+  },
+  auth: {
+    login: {
+      metaTitle: "Sign in · Creative Workbench",
+      title: "Sign in",
+      description: "Sign in to continue to Creative Workbench.",
+      submit: "Sign in",
+      submitting: "Signing in…",
+      switchPrompt: "No account yet?",
+      switchLink: "Create one",
+    },
+    signup: {
+      metaTitle: "Create account · Creative Workbench",
+      title: "Create an account",
+      description: "Create an account to start using Creative Workbench.",
+      submit: "Create account",
+      submitting: "Creating account…",
+      switchPrompt: "Already have an account?",
+      switchLink: "Sign in",
+    },
+    fields: {
+      name: "Name",
+      email: "Email",
+      password: "Password",
+    },
+    validation: {
+      name: "Enter your name",
+      email: "Enter a valid email address",
+      passwordMin: "Password must be at least 8 characters",
+      passwordMax: "Password must be at most 128 characters",
+    },
+    google: "Continue with Google",
+    or: "or",
+  },
+  projects: {
+    metaTitle: "Projects · Creative Workbench",
+    title: "Projects",
+    description: "Every project has a canvas for your creative flow.",
+    nameLabel: "Project name",
+    namePlaceholder: "My first film",
+    nameRequired: "Enter a project name",
+    nameTooLong: "Project name must be at most 120 characters",
+    create: "Create project",
+    creating: "Creating…",
+    createError: "Could not create the project. Please try again.",
+    listLabel: "Your projects",
+    empty: "No projects yet. Create one to get started.",
+    open: "Open canvas",
+    loadError: "Could not load your projects.",
+  },
+  canvas: {
+    metaTitle: "Canvas · Creative Workbench",
+    loading: "Loading canvas…",
+    notFound: "This canvas does not exist or you do not have access to it.",
+    loadError: "Could not load the canvas.",
+    backToProjects: "Back to projects",
+    gateway: {
+      connecting: "Connecting gateway…",
+      offline: "Gateway offline",
+      connected: "Gateway connected",
+    },
+    toolbar: {
+      undo: "Undo",
+      redo: "Redo",
+      save: "Save",
+      exportJson: "Export JSON",
+    },
+    saveStatus: {
+      saved: "Saved",
+      unsaved: "Unsaved changes",
+      saving: "Saving…",
+      conflict: "Updated elsewhere",
+      error: "Save failed",
+    },
+    conflict:
+      "This canvas was updated somewhere else. Reload to continue; your unsaved changes here are not merged.",
+    reload: "Reload",
+    saveError: "Could not save the canvas. Your changes are still here.",
+    unsavedWarning: "You have unsaved changes.",
+    paletteLabel: "Node palette",
+    canvasLabel: "Creative canvas",
+    add: "Add {name}",
+    inspector: {
+      title: "Inspector",
+      empty:
+        "Select a node to edit it. Drag nodes, connect ports, or add nodes from the palette.",
+      nodeTitle: "Node title",
+      applyTitle: "Apply title",
+      titleRequired: "Enter a title",
+      titleTooLong: "Title must be at most 120 characters",
+      applyConfig: "Apply settings",
+      invalid: "Check the highlighted fields",
+      saved: "Applied",
+      type: "Type: {type}",
+    },
+    node: {
+      configure: "Configure",
+      empty: "Empty",
+      unknown: "Unknown node type: {type}",
+      status: {
+        queued: "Queued",
+        running: "Running",
+        succeeded: "Done",
+        failed: "Failed",
+      },
+    },
+    connection: {
+      "unknown-node": "That node no longer exists.",
+      "unknown-port": "That port does not exist.",
+      "port-type-mismatch": "These ports carry different kinds of data.",
+      "self-loop": "A node cannot connect to itself.",
+      "duplicate-edge": "These ports are already connected.",
+      cycle: "That connection would create a loop.",
+    },
+  },
+  nodes: {
+    text: {
+      title: "Text",
+      ports: { text: "Text" },
+      fields: { text: "Text" },
+    },
+    "image.generate": {
+      title: "Image generation",
+      ports: { prompt: "Prompt", image: "Image" },
+      fields: { prompt: "Prompt", aspectRatio: "Aspect ratio" },
+    },
+  },
+} as const;

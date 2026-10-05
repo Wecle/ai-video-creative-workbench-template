@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@creative/api-client": "workspace:*",
+    "@creative/canvas-doc": "workspace:*",
     "@creative/contracts": "workspace:*",
+    "@creative/node-registry": "workspace:*",
     "@creative/ui": "workspace:*",
     "@hookform/resolvers": "^5.2.1",
     "@tailwindcss/postcss": "^4.1.13",

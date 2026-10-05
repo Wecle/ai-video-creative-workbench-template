@@ -35,8 +35,10 @@ export async function agentRunRoutes(
     },
     async (request, reply) => {
       // The owner comes from the gateway-signed identity only; the body has no userId.
-      // projectId and canvasId are opaque pass-through values: no authorization decision
-      // may depend on them until resource-level authorization exists (P1).
+      // projectId and canvasId are still opaque pass-through values here. Canvases now have
+      // resource-level authorization, so code that starts using these fields to read or
+      // write canvas data must first call findAccessibleCanvas (canvas/access.ts) and
+      // answer 404 when it finds nothing; never trust them as given.
       try {
         const run = await agentRuns.start(
           request.identity.userId!,

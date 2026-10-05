@@ -7,6 +7,9 @@ export default defineConfig({
   clean: true,
   noExternal: [
     "@creative/contracts",
+    // Source-only workspace packages (yjs and zod stay external runtime dependencies).
+    "@creative/canvas-doc",
+    "@creative/node-registry",
     "@creative/database",
     "@creative/observability",
     // Constants and types only (never the workflow entry): see packages/workflows/README.md.

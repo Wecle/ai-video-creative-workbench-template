@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import {
   type InternalIdentity,
 } from "@creative/contracts/internal-auth";
 import { createDatabase, schema } from "@creative/database";
+import type { Registry } from "@creative/node-registry";
 import { buildApp } from "../src/app";
 import { createAuth } from "../src/auth/auth";
 import type { AgentRunService } from "../src/temporal/agent-runs";
@@ -88,7 +90,10 @@ export async function createTemporalTestEnv() {
 export function createTestApp(
   databaseUrl = testDatabaseUrl() ??
     "postgresql://nobody:nobody@127.0.0.1:1/none",
-  { agentRuns = unusedAgentRuns }: { agentRuns?: AgentRunService } = {},
+  {
+    agentRuns = unusedAgentRuns,
+    registry,
+  }: { agentRuns?: AgentRunService; registry?: Registry } = {},
 ) {
   const database = createDatabase(databaseUrl);
   const auth = createAuth({
@@ -103,6 +108,7 @@ export function createTestApp(
     internalSecret: INTERNAL_SECRET,
     webOrigin: WEB_ORIGIN,
     agentRuns,
+    registry,
   });
   return {
     app,
@@ -113,4 +119,37 @@ export function createTestApp(
       await database.close();
     },
   };
+}
+
+/** A user with a personal workspace, inserted directly (no sign-up round trip). */
+export async function createUserWithWorkspace(
+  db: ReturnType<typeof createDatabase>["db"],
+  label = "user",
+) {
+  const key = randomUUID();
+  const [user] = await db
+    .insert(schema.users)
+    .values({ name: label, email: `p1-${key}@example.test` })
+    .returning({ id: schema.users.id });
+  const workspace = await createWorkspace(db, user!.id, `${label}'s workspace`);
+  return { userId: user!.id, workspaceId: workspace };
+}
+
+export async function createWorkspace(
+  db: ReturnType<typeof createDatabase>["db"],
+  userId: string,
+  name: string,
+  createdAt = new Date(),
+) {
+  const [workspace] = await db
+    .insert(schema.workspaces)
+    .values({ name, slug: `ws-${randomUUID()}`, createdAt })
+    .returning({ id: schema.workspaces.id });
+  await db.insert(schema.workspace_members).values({
+    workspace_id: workspace!.id,
+    userId,
+    role: "owner",
+    createdAt,
+  });
+  return workspace!.id;
 }

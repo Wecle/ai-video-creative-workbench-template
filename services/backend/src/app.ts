@@ -2,24 +2,24 @@ import Fastify, { type FastifyError } from "fastify";
 import helmet from "@fastify/helmet";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
-import { z } from "zod";
 import {
   serializerCompiler,
   validatorCompiler,
   jsonSchemaTransform,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
+import { healthSchema } from "@creative/contracts";
 import {
-  canvasDocumentSchema,
-  demoCanvasDocument,
-  healthSchema,
-} from "@creative/contracts";
-import { withSpan } from "@creative/observability";
+  registry as defaultRegistry,
+  type Registry,
+} from "@creative/node-registry";
 import { sql } from "drizzle-orm";
 import type { Auth } from "./auth/auth";
 import { authRoutes } from "./auth/routes";
 import { requireUser, verifyGatewayIdentity } from "./plugins/gateway-trust";
 import { agentRunRoutes } from "./routes/agent-runs";
+import { canvasRoutes } from "./routes/canvases";
+import { projectRoutes } from "./routes/projects";
 import { meRoutes, type Database } from "./routes/me";
 import type { AgentRunService } from "./temporal/agent-runs";
 
@@ -33,6 +33,8 @@ export type BackendOptions = {
   webOrigin: string;
   /** Starts and queries agent runs (Temporal in production, a fake in tests). */
   agentRuns: AgentRunService;
+  /** Node definitions saved canvases are validated against (default: the shipped registry). */
+  registry?: Registry;
 };
 
 const ok = () => "ready" as const;
@@ -45,6 +47,7 @@ export function buildApp({
   internalSecret,
   webOrigin,
   agentRuns,
+  registry = defaultRegistry,
 }: BackendOptions) {
   const app = Fastify({
     logger,
@@ -98,38 +101,8 @@ export function buildApp({
       v1.addHook("onRequest", requireUser);
       await meRoutes(v1, db);
       await agentRunRoutes(v1, agentRuns);
-      v1.withTypeProvider<ZodTypeProvider>().get(
-        "/api/v1/projects",
-        async () => ({
-          projects: [
-            {
-              id: "demo-project",
-              name: "Demo Creative Project",
-              status: "draft",
-            },
-          ],
-        }),
-      );
-      v1.withTypeProvider<ZodTypeProvider>().get(
-        "/api/v1/canvases/:canvasId/document",
-        {
-          schema: {
-            params: z.object({ canvasId: z.string().min(1).max(100) }),
-            response: {
-              200: canvasDocumentSchema,
-              404: z.object({ error: z.string() }),
-            },
-          },
-        },
-        async (request, reply) => {
-          if (request.params.canvasId !== "demo")
-            return reply.code(404).send({ error: "Canvas not found" });
-          return withSpan(
-            "backend.demo-canvas",
-            async () => demoCanvasDocument,
-          );
-        },
-      );
+      await projectRoutes(v1, db);
+      await canvasRoutes(v1, db, registry);
     });
   });
   return app;

@@ -5,6 +5,7 @@ packages:
 catalog:
   typescript: ^5.8.3
   zod: ^4.0.10
+  yjs: ^13.6.33
   vitest: ^4.1.11
   tsup: ^8.5.0
   "@temporalio/activity": ^1.24.0

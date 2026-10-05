@@ -1,0 +1,35 @@
+{
+  "image.generate@1": {
+    "type": "image.generate",
+    "version": 1,
+    "inputs": [{ "id": "prompt", "type": "text" }],
+    "outputs": [{ "id": "image", "type": "image" }],
+    "config": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "prompt": { "default": "", "type": "string", "maxLength": 4000 },
+        "aspectRatio": {
+          "default": "1:1",
+          "type": "string",
+          "enum": ["1:1", "16:9", "9:16"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "text@1": {
+    "type": "text",
+    "version": 1,
+    "inputs": [],
+    "outputs": [{ "id": "text", "type": "text" }],
+    "config": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "text": { "default": "", "type": "string", "maxLength": 20000 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

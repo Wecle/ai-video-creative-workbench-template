@@ -57,6 +57,10 @@ export default tseslint.config(
             "@creative/workflows",
             "@creative/workflows/*",
             "@creative/contracts/internal-auth",
+            // Yjs is only reachable through @creative/canvas-doc.
+            "yjs",
+            "y-protocols",
+            "y-protocols/*",
           ],
         },
       ],
@@ -89,6 +93,61 @@ export default tseslint.config(
             message: "Not available in the deterministic workflow sandbox.",
           }),
         ),
+      ],
+    },
+  },
+  {
+    // Isomorphic packages run in the browser and on the server: no globals that exist in only one.
+    files: [
+      "packages/node-registry/src/**/*.ts",
+      "packages/canvas-doc/src/**/*.ts",
+    ],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        ...["window", "document", "process", "Buffer", "localStorage"].map(
+          (name) => ({
+            name,
+            message: "Not available in both the browser and Node.",
+          }),
+        ),
+      ],
+    },
+  },
+  {
+    files: ["packages/node-registry/src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(?!zod$|\\.{1,2}(/|$))",
+              allowTypeImports: true,
+              message:
+                "node-registry may only import zod and relative modules.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/canvas-doc/src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex:
+                "^(?!(zod|yjs|@creative/contracts|@creative/node-registry)$|\\.{1,2}(/|$))",
+              allowTypeImports: true,
+              message:
+                "canvas-doc may only import zod, yjs, @creative/contracts, @creative/node-registry and relative modules.",
+            },
+          ],
+        },
       ],
     },
   },
