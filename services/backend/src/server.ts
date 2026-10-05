@@ -1,8 +1,10 @@
+import { Client, Connection } from "@temporalio/client";
 import { buildApp } from "./app";
 import { createAuth } from "./auth/auth";
 import { loadConfig } from "./config";
 import { createDatabase, schema } from "@creative/database";
 import { startTelemetry } from "@creative/observability";
+import { createTemporalAgentRuns } from "./temporal/agent-runs";
 
 const config = loadConfig();
 const telemetry = startTelemetry(
@@ -10,11 +12,21 @@ const telemetry = startTelemetry(
 );
 const database = createDatabase(config.databaseUrl);
 const auth = createAuth({ db: database.db, schema, config });
+// Lazy: the backend must start even if Temporal is briefly down; the connection recovers on its own.
+const temporal = Connection.lazy({ address: config.temporalAddress });
+const temporalClient = new Client({
+  connection: temporal,
+  namespace: config.temporalNamespace,
+});
 const app = buildApp({
   auth,
   db: database.db,
   internalSecret: config.internalSecret,
   webOrigin: config.webOrigin,
+  agentRuns: createTemporalAgentRuns({
+    client: temporalClient,
+    connection: temporal,
+  }),
 });
 let closing = false;
 async function shutdown() {
@@ -22,6 +34,7 @@ async function shutdown() {
   closing = true;
   try {
     await app.close();
+    await temporal.close();
     await database.close();
     await telemetry.shutdown();
   } catch (error) {

@@ -11,6 +11,8 @@ const schema = z
     INTERNAL_AUTH_SECRET: secret,
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),
+    TEMPORAL_ADDRESS: z.string().min(1).optional(),
+    TEMPORAL_NAMESPACE: z.string().min(1).default("default"),
     HOST: z.string().default("127.0.0.1"),
     BACKEND_PORT: z.coerce.number().int().min(0).max(65535).default(4001),
   })
@@ -31,6 +33,8 @@ export type BackendConfig = {
   internalSecret: string;
   /** Present only when both Google variables are set. */
   google?: { clientId: string; clientSecret: string };
+  temporalAddress: string;
+  temporalNamespace: string;
   host: string;
   port: number;
 };
@@ -51,6 +55,8 @@ export function loadConfig(
     const problems = (["BETTER_AUTH_SECRET", "INTERNAL_AUTH_SECRET"] as const)
       .filter((name) => values[name].includes("dev-only"))
       .map((name) => `${name} must not use the dev-only placeholder`);
+    if (!values.TEMPORAL_ADDRESS)
+      problems.push("TEMPORAL_ADDRESS is required in production");
     if (problems.length > 0)
       throw new Error(`Invalid backend configuration: ${problems.join("; ")}`);
   }
@@ -66,6 +72,8 @@ export function loadConfig(
           clientSecret: values.GOOGLE_CLIENT_SECRET!,
         }
       : undefined,
+    temporalAddress: values.TEMPORAL_ADDRESS ?? "localhost:7233",
+    temporalNamespace: values.TEMPORAL_NAMESPACE,
     host: values.HOST,
     port: values.BACKEND_PORT,
   };

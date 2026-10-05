@@ -9,6 +9,8 @@ export default defineConfig({
     "@creative/contracts",
     "@creative/database",
     "@creative/observability",
+    // Constants and types only (never the workflow entry): see packages/workflows/README.md.
+    "@creative/workflows",
   ],
   external: [
     "@opentelemetry/api",
