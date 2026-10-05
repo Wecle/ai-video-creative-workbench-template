@@ -14,6 +14,27 @@ concurrency:
 jobs:
   typecheck-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: template
+          POSTGRES_PASSWORD: template
+          POSTGRES_DB: template
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U template -d template"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://template:template@localhost:5432/template
+      TEST_DATABASE_URL: postgresql://template:template@localhost:5432/template
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -24,6 +45,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate # empty-database migration, also proves migrations run
+      - name: Schema drift check # Better Auth config -> auth schema -> migrations stay in sync
+        run: |
+          pnpm auth:generate
+          pnpm db:generate
+          test -z "$(git status --porcelain -- packages/database)"
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck

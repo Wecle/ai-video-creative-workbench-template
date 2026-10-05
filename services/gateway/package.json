@@ -14,13 +14,22 @@
     "@creative/contracts": "workspace:*",
     "@creative/observability": "workspace:*",
     "@fastify/helmet": "^13.0.1",
-    "@fastify/rate-limit": "^10.3.0",
-    "fastify": "^5.5.0"
+    "@fastify/http-proxy": "^11.6.4",
+    "@fastify/rate-limit": "^11.2.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "fastify": "^5.5.0",
+    "ioredis": "^5.11.1",
+    "jose": "^6.2.12",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "tsx": "^4.20.3",
+    "@types/ws": "^8.18.2",
     "tsup": "catalog:",
+    "tsx": "^4.20.3",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "ws": "^8.22.0"
   }
 }

@@ -36,6 +36,11 @@ services:
       BACKEND_PORT: 4001
       DATABASE_URL: postgresql://template:template@postgres:5432/template
       REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN in .env (public origin of the web app)}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env (openssl rand -base64 32)}
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:?Set INTERNAL_AUTH_SECRET in .env (openssl rand -base64 32)}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     ports:
       - "127.0.0.1:4001:4001"
     depends_on:
@@ -65,10 +70,18 @@ services:
       HOST: 0.0.0.0
       GATEWAY_PORT: 4000
       BACKEND_URL: http://backend:4001
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN in .env (public origin of the web app)}
+      INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:?Set INTERNAL_AUTH_SECRET in .env (openssl rand -base64 32)}
+      # Production mode requires it. Default: private ranges, which cover the Compose
+      # network where the web container (Next rewrite) connects from.
+      TRUST_PROXY: ${TRUST_PROXY:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
       backend:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:

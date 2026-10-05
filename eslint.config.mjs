@@ -38,6 +38,14 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
+          // `paths` matches exactly: better-auth/react and friends stay allowed.
+          paths: [
+            {
+              name: "better-auth",
+              message:
+                "Import a client subpath (better-auth/react, better-auth/client/plugins, better-auth/cookies); the root entry is server-side.",
+            },
+          ],
           patterns: [
             "@creative/database",
             "@creative/database/*",
@@ -46,6 +54,7 @@ export default tseslint.config(
             "postgres",
             "@creative/job-queue",
             "@creative/observability",
+            "@creative/contracts/internal-auth",
           ],
         },
       ],

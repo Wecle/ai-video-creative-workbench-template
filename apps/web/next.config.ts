@@ -8,7 +8,11 @@ const nextConfig: NextConfig = {
   ],
   async rewrites() {
     const gateway = process.env.GATEWAY_URL ?? "http://127.0.0.1:4000";
-    return [{ source: "/gateway/:path*", destination: gateway + "/:path*" }];
+    return [
+      { source: "/gateway/:path*", destination: gateway + "/:path*" },
+      // Same-origin auth routes: the session cookie is set on the web origin.
+      { source: "/api/auth/:path*", destination: gateway + "/api/auth/:path*" },
+    ];
   },
 };
 export default nextConfig;

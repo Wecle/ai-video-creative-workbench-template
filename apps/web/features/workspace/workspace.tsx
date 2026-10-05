@@ -1,12 +1,16 @@
 "use client";
+import { useEffect } from "react";
 import { Download, Plus, RotateCcw, Sparkles } from "lucide-react";
 import { Badge, Button } from "@creative/ui";
 import { useQuery } from "@tanstack/react-query";
-import { createApiClient } from "@creative/api-client";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useRouter } from "next/navigation";
+import { api } from "../../lib/api";
+import { authClient } from "../../lib/auth-client";
+import { UserMenu } from "../auth/user-menu";
 import { Canvas } from "../canvas/canvas";
 import {
   exportDocument,
@@ -14,7 +18,6 @@ import {
   type StarterNode,
 } from "../canvas/store";
 
-const api = createApiClient();
 const titleSchema = z.object({
   title: z.string().trim().min(1, "Enter a title").max(120),
 });
@@ -71,6 +74,19 @@ function Workbench() {
     retry: 1,
     refetchInterval: 30000,
   });
+  const router = useRouter();
+  const session = authClient.useSession();
+  // Exercises the whole chain: access token -> gateway JWT check -> backend identity.
+  const me = useQuery({
+    queryKey: ["me"],
+    queryFn: api.me,
+    enabled: !!session.data,
+    retry: false,
+  });
+  // The middleware only sees the cookie; an expired session is caught here.
+  useEffect(() => {
+    if (!session.isPending && !session.data) router.replace("/login");
+  }, [session.isPending, session.data, router]);
   const selected = useCanvasStore((state) =>
     state.nodes.find((node) => node.id === state.selectedId),
   );
@@ -113,6 +129,10 @@ function Workbench() {
             <Download />
             Export JSON
           </Button>
+          <UserMenu
+            email={session.data?.user.email}
+            workspace={me.data?.workspaces[0]?.name}
+          />
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
