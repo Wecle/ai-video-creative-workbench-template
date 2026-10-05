@@ -2,35 +2,45 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@creative/ui";
 import { authClient } from "../../lib/auth-client";
 import { clearAccessToken } from "../../lib/access-token";
-import { authCopy as copy } from "./copy";
+import { useT } from "../../i18n/client";
+import { LocaleSwitcher } from "../../i18n/locale-switcher";
+import type { Translate } from "../../i18n/translate";
 
 type Mode = "login" | "signup";
 
 const fieldClass =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 
-const loginSchema = z.object({
-  email: z.string().trim().pipe(z.email(copy.validation.email)),
-  password: z
-    .string()
-    .min(8, copy.validation.passwordMin)
-    .max(128, copy.validation.passwordMax),
-});
-const signupSchema = loginSchema.extend({
-  name: z.string().trim().min(1, copy.validation.name).max(100),
-});
-type FormValues = z.infer<typeof signupSchema>;
+// Built per render language: the validation messages are translated.
+function createSchemas(t: Translate) {
+  const login = z.object({
+    email: z
+      .string()
+      .trim()
+      .pipe(z.email(t("auth.validation.email"))),
+    password: z
+      .string()
+      .min(8, t("auth.validation.passwordMin"))
+      .max(128, t("auth.validation.passwordMax")),
+  });
+  const signup = login.extend({
+    name: z.string().trim().min(1, t("auth.validation.name")).max(100),
+  });
+  return { login, signup };
+}
+type FormValues = z.infer<ReturnType<typeof createSchemas>["signup"]>;
 
 export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
   const router = useRouter();
-  const text = copy[mode];
+  const t = useT();
+  const schemas = useMemo(() => createSchemas(t), [t]);
   const [serverError, setServerError] = useState<string>();
   const [googlePending, setGooglePending] = useState(false);
   const session = authClient.useSession();
@@ -40,7 +50,7 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(
-      mode === "signup" ? signupSchema : loginSchema,
+      mode === "signup" ? schemas.signup : schemas.login,
     ) as never,
   });
 
@@ -65,13 +75,13 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
               password: values.password,
             });
       if (error) {
-        setServerError(error.message || copy.genericError);
+        setServerError(error.message || t("common.genericError"));
         return;
       }
       router.replace(next);
       router.refresh();
     } catch {
-      setServerError(copy.genericError);
+      setServerError(t("common.genericError"));
     }
   }
 
@@ -83,9 +93,9 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
         provider: "google",
         callbackURL: next,
       });
-      if (error) setServerError(error.message || copy.genericError);
+      if (error) setServerError(error.message || t("common.genericError"));
     } catch {
-      setServerError(copy.genericError);
+      setServerError(t("common.genericError"));
     } finally {
       setGooglePending(false);
     }
@@ -96,11 +106,16 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
     next === "/" ? other : `${other}?next=${encodeURIComponent(next)}`;
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#090909] p-4 text-neutral-100">
+    <main className="relative flex min-h-dvh items-center justify-center bg-background p-4 text-neutral-100">
+      <div className="absolute top-4 right-4">
+        <LocaleSwitcher />
+      </div>
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-1">
-          <h1 className="text-lg font-semibold">{text.title}</h1>
-          <p className="text-sm text-neutral-400">{text.description}</p>
+          <h1 className="text-lg font-semibold">{t(`auth.${mode}.title`)}</h1>
+          <p className="text-sm text-neutral-400">
+            {t(`auth.${mode}.description`)}
+          </p>
         </div>
         <form
           onSubmit={handleSubmit(onSubmit)}
@@ -110,7 +125,7 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
           {mode === "signup" && (
             <div className="space-y-1">
               <label htmlFor="name" className="block text-sm">
-                {copy.fields.name}
+                {t("auth.fields.name")}
               </label>
               <input
                 id="name"
@@ -133,7 +148,7 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
           )}
           <div className="space-y-1">
             <label htmlFor="email" className="block text-sm">
-              {copy.fields.email}
+              {t("auth.fields.email")}
             </label>
             <input
               id="email"
@@ -152,7 +167,7 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
           </div>
           <div className="space-y-1">
             <label htmlFor="password" className="block text-sm">
-              {copy.fields.password}
+              {t("auth.fields.password")}
             </label>
             <input
               id="password"
@@ -181,12 +196,14 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
             </p>
           )}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? text.submitting : text.submit}
+            {isSubmitting
+              ? t(`auth.${mode}.submitting`)
+              : t(`auth.${mode}.submit`)}
           </Button>
         </form>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
           <span className="h-px flex-1 bg-white/10" />
-          {copy.or}
+          {t("auth.or")}
           <span className="h-px flex-1 bg-white/10" />
         </div>
         <Button
@@ -196,12 +213,12 @@ export function AuthForm({ mode, next }: { mode: Mode; next: string }) {
           disabled={googlePending}
           onClick={google}
         >
-          {copy.google}
+          {t("auth.google")}
         </Button>
         <p className="text-center text-sm text-neutral-400">
-          {text.switchPrompt}{" "}
+          {t(`auth.${mode}.switchPrompt`)}{" "}
           <Link href={otherHref} className="text-violet-300 underline">
-            {text.switchLink}
+            {t(`auth.${mode}.switchLink`)}
           </Link>
         </p>
       </div>
