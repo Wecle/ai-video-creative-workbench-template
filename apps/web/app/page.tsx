@@ -1,5 +1,5 @@
-import { Workspace } from "../features/workspace/workspace";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <Workspace />;
+  redirect("/projects");
 }

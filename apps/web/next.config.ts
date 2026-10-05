@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
     "@creative/contracts",
     "@creative/ui",
     "@creative/api-client",
+    "@creative/canvas-doc",
+    "@creative/node-registry",
   ],
   async rewrites() {
     const gateway = process.env.GATEWAY_URL ?? "http://127.0.0.1:4000";
