@@ -3,23 +3,78 @@ import {
   agentRequestSchema,
   agentRunResponseSchema,
   agentRunSchema,
-  canvasDocumentSchema,
-  demoCanvasDocument,
+  canvasSnapshotSchema,
+  createProjectRequestSchema,
   meResponseSchema,
+  saveCanvasRequestSchema,
 } from "../src";
 
 describe("contracts", () => {
-  it("validates the demo canvas", () =>
-    expect(canvasDocumentSchema.parse(demoCanvasDocument)).toEqual(
-      demoCanvasDocument,
-    ));
-  it("rejects future document versions", () =>
+  const snapshot = {
+    schemaVersion: 1,
+    nodes: [
+      {
+        id: "n1",
+        type: "text",
+        version: 1,
+        title: "Text",
+        position: { x: 0, y: 0 },
+        config: { text: "" },
+      },
+    ],
+    edges: [],
+  };
+  it("parses a canvas snapshot", () =>
+    expect(canvasSnapshotSchema.parse(snapshot)).toEqual(snapshot));
+  it("rejects runtime status, viewport and unknown keys in snapshots", () => {
+    const withStatus = {
+      ...snapshot,
+      nodes: [{ ...snapshot.nodes[0], status: "ready" }],
+    };
+    expect(canvasSnapshotSchema.safeParse(withStatus).success).toBe(false);
     expect(
-      canvasDocumentSchema.safeParse({
-        ...demoCanvasDocument,
-        schemaVersion: 2,
+      canvasSnapshotSchema.safeParse({
+        ...snapshot,
+        viewport: { x: 0, y: 0, zoom: 1 },
       }).success,
-    ).toBe(false));
+    ).toBe(false);
+    expect(
+      canvasSnapshotSchema.safeParse({ ...snapshot, canvasId: "c" }).success,
+    ).toBe(false);
+  });
+  it("rejects future snapshot versions and unsafe ids", () => {
+    expect(
+      canvasSnapshotSchema.safeParse({ ...snapshot, schemaVersion: 2 }).success,
+    ).toBe(false);
+    const badId = { ...snapshot, nodes: [{ ...snapshot.nodes[0], id: "a:b" }] };
+    expect(canvasSnapshotSchema.safeParse(badId).success).toBe(false);
+  });
+  it("validates project and canvas request bodies", () => {
+    expect(createProjectRequestSchema.safeParse({ name: "  " }).success).toBe(
+      false,
+    );
+    expect(createProjectRequestSchema.parse({ name: " Film " }).name).toBe(
+      "Film",
+    );
+    expect(
+      createProjectRequestSchema.safeParse({ name: "x", workspaceId: "nope" })
+        .success,
+    ).toBe(false);
+    expect(
+      saveCanvasRequestSchema.safeParse({ baseVersion: 0, state: "AAAA" })
+        .success,
+    ).toBe(true);
+    expect(
+      saveCanvasRequestSchema.safeParse({
+        baseVersion: 0,
+        state: "not base64!",
+      }).success,
+    ).toBe(false);
+    expect(
+      saveCanvasRequestSchema.safeParse({ baseVersion: -1, state: "AAAA" })
+        .success,
+    ).toBe(false);
+  });
   it("rejects blank agent prompts", () =>
     expect(agentRequestSchema.safeParse({ prompt: "  " }).success).toBe(false));
   it("parses the /me response", () => {
