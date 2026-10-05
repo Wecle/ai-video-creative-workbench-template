@@ -48,8 +48,35 @@ describe("backend config", () => {
         BETTER_AUTH_SECRET: `dev-only-${secret}`,
       }),
     ).toThrow(/BETTER_AUTH_SECRET must not use the dev-only/);
-    expect(loadConfig({ ...env, NODE_ENV: "production" }).production).toBe(
-      true,
+    expect(
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        TEMPORAL_ADDRESS: "temporal:7233",
+      }).production,
+    ).toBe(true);
+  });
+
+  it("defaults the Temporal settings in development", () => {
+    expect(loadConfig(env)).toMatchObject({
+      temporalAddress: "localhost:7233",
+      temporalNamespace: "default",
+    });
+    expect(
+      loadConfig({
+        ...env,
+        TEMPORAL_ADDRESS: "temporal:7233",
+        TEMPORAL_NAMESPACE: "prod",
+      }),
+    ).toMatchObject({
+      temporalAddress: "temporal:7233",
+      temporalNamespace: "prod",
+    });
+  });
+
+  it("requires TEMPORAL_ADDRESS in production", () => {
+    expect(() => loadConfig({ ...env, NODE_ENV: "production" })).toThrow(
+      /TEMPORAL_ADDRESS is required in production/,
     );
   });
 });

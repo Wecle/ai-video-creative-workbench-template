@@ -7,6 +7,7 @@
     "node": ">=22.9.0"
   },
   "scripts": {
+    "bootstrap": "bash scripts/bootstrap.sh",
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "eslint apps packages services --max-warnings 0",

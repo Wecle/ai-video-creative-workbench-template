@@ -1,0 +1,24 @@
+{
+  "name": "@creative/workflows",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./constants": "./src/constants.ts",
+    "./activities": "./src/activities.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@temporalio/workflow": "catalog:"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "catalog:",
+    "@temporalio/worker": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

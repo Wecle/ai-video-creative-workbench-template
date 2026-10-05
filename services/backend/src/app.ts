@@ -19,7 +19,9 @@ import { sql } from "drizzle-orm";
 import type { Auth } from "./auth/auth";
 import { authRoutes } from "./auth/routes";
 import { requireUser, verifyGatewayIdentity } from "./plugins/gateway-trust";
+import { agentRunRoutes } from "./routes/agent-runs";
 import { meRoutes, type Database } from "./routes/me";
+import type { AgentRunService } from "./temporal/agent-runs";
 
 export type BackendOptions = {
   logger?: boolean;
@@ -29,7 +31,12 @@ export type BackendOptions = {
   internalSecret: string;
   /** Origin the browser uses; Better Auth routes are matched against it. */
   webOrigin: string;
+  /** Starts and queries agent runs (Temporal in production, a fake in tests). */
+  agentRuns: AgentRunService;
 };
+
+const ok = () => "ready" as const;
+const fail = () => "unavailable" as const;
 
 export function buildApp({
   logger = true,
@@ -37,6 +44,7 @@ export function buildApp({
   db,
   internalSecret,
   webOrigin,
+  agentRuns,
 }: BackendOptions) {
   const app = Fastify({
     logger,
@@ -75,21 +83,21 @@ export function buildApp({
       async () => ({ status: "ok" as const, service: "backend" }),
     );
     app.get("/ready", { config: { public: true } }, async (_request, reply) => {
-      try {
-        await db.execute(sql`select 1`);
-      } catch {
-        return reply.code(503).send({
-          status: "not_ready",
-          dependencies: { database: "unavailable" },
-        });
-      }
-      return { status: "ready", dependencies: { database: "ready" } };
+      const [database, temporal] = await Promise.all([
+        db.execute(sql`select 1`).then(ok, fail),
+        agentRuns.ping().then(ok, fail),
+      ]);
+      const dependencies = { database, temporal };
+      if (database === "ready" && temporal === "ready")
+        return { status: "ready", dependencies };
+      return reply.code(503).send({ status: "not_ready", dependencies });
     });
     app.register(authRoutes, { auth, webOrigin });
     // Business API: a valid gateway signature that vouches for a user is required.
     app.register(async (v1) => {
       v1.addHook("onRequest", requireUser);
       await meRoutes(v1, db);
+      await agentRunRoutes(v1, agentRuns);
       v1.withTypeProvider<ZodTypeProvider>().get(
         "/api/v1/projects",
         async () => ({

@@ -52,11 +52,43 @@ export default tseslint.config(
             "drizzle-orm",
             "drizzle-orm/*",
             "postgres",
-            "@creative/job-queue",
             "@creative/observability",
+            "@temporalio/*",
+            "@creative/workflows",
+            "@creative/workflows/*",
             "@creative/contracts/internal-auth",
           ],
         },
+      ],
+    },
+  },
+  {
+    // Workflow code runs in Temporal's deterministic sandbox: no IO, no clocks, no Node APIs.
+    // Allow only @temporalio/workflow and relative imports (type imports are free).
+    files: ["packages/workflows/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": "off",
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(?!@temporalio/workflow$|\\.{1,2}(/|$))",
+              allowTypeImports: true,
+              message:
+                "Workflow code may only import @temporalio/workflow and relative modules. Put IO in activities (services/agent-runner).",
+            },
+          ],
+        },
+      ],
+      "no-restricted-globals": [
+        "error",
+        ...["fetch", "process", "require", "XMLHttpRequest", "WebSocket"].map(
+          (name) => ({
+            name,
+            message: "Not available in the deterministic workflow sandbox.",
+          }),
+        ),
       ],
     },
   },

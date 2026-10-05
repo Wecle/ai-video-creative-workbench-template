@@ -29,6 +29,25 @@ export const agentRequestSchema = z.object({
   canvasId: z.string().max(200).optional(),
 });
 
+export const agentRunStatusSchema = z.enum([
+  "running",
+  "waiting",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export const agentRunSchema = z.object({
+  id: z.uuid(),
+  status: agentRunStatusSchema,
+  createdAt: z.string(),
+  result: z.object({ message: z.string() }).optional(),
+  error: z.object({ message: z.string() }).optional(),
+});
+export const agentRunResponseSchema = z.object({ run: agentRunSchema });
+export type AgentRequest = z.infer<typeof agentRequestSchema>;
+export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>;
+export type AgentRunView = z.infer<typeof agentRunSchema>;
+
 export const nodeTypeSchema = z.enum([
   "text",
   "image.generate",

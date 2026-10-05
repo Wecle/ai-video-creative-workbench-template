@@ -1,0 +1,9 @@
+# Dynamic config for the local Temporal server (copied from temporalio/samples-server).
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+# Development only: refresh the search attribute cache on every read so newly
+# registered attributes show up immediately. Do not carry this into production.
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}

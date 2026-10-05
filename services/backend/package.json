@@ -16,12 +16,14 @@
     "@creative/contracts": "workspace:*",
     "@creative/database": "workspace:*",
     "@creative/observability": "workspace:*",
+    "@creative/workflows": "workspace:*",
     "@fastify/helmet": "^13.0.1",
     "@fastify/swagger": "^9.5.1",
     "@fastify/swagger-ui": "^6.1.1",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/sdk-node": "^0.222.0",
+    "@temporalio/client": "catalog:",
     "better-auth": "^1.7.7",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.5.0",
@@ -30,6 +32,8 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@temporalio/testing": "catalog:",
+    "@temporalio/worker": "catalog:",
     "auth": "^1.7.7",
     "jose": "^6.2.12",
     "tsup": "catalog:",

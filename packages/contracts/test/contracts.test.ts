@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   agentRequestSchema,
+  agentRunResponseSchema,
+  agentRunSchema,
   canvasDocumentSchema,
   demoCanvasDocument,
   meResponseSchema,
@@ -29,5 +31,25 @@ describe("contracts", () => {
     };
     expect(meResponseSchema.parse(body)).toEqual(body);
     expect(meResponseSchema.safeParse({ user: body.user }).success).toBe(false);
+  });
+  it("parses agent runs and their response envelope", () => {
+    const run = {
+      id: "0f8fad5b-d9cb-469f-a165-70867728950e",
+      status: "completed",
+      createdAt: "2026-10-05T00:00:00.000Z",
+      result: { message: "Template Agent received: Hi" },
+    };
+    expect(agentRunSchema.parse(run)).toEqual(run);
+    expect(agentRunResponseSchema.parse({ run })).toEqual({ run });
+    expect(
+      agentRunSchema.parse({ ...run, status: "failed", result: undefined })
+        .status,
+    ).toBe("failed");
+    expect(agentRunSchema.safeParse({ ...run, status: "paused" }).success).toBe(
+      false,
+    );
+    expect(agentRunSchema.safeParse({ ...run, id: "not-a-uuid" }).success).toBe(
+      false,
+    );
   });
 });
