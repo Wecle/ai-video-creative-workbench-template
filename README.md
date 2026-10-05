@@ -1,25 +1,31 @@
 # AI Video Creative Workbench Template
 
-面向 AI 视频创作工具的 monorepo 模板：Next.js 前端、Fastify 后端、Agent Runner、媒体 Worker，以及可扩展的 Skill 和 MCP 能力目录。
+面向 AI 视频创作工具的 monorepo 模板：Next.js 前端、Fastify 后端、基于 Temporal 的 Agent 执行层、媒体 Worker，以及可扩展的 Skill 能力目录（MCP 经 ToolProvider 预留）。
 
 > [!NOTE]
-> 当前仓库是技术脚手架。画布和 Agent 使用演示实现，不包含完整业务或模型调用。已接入邮箱密码登录（Better Auth）、Gateway JWT 验签和 Redis 限流；邮箱验证、找回密码和租户授权尚未实现。
+> 当前仓库是技术脚手架。画布和 Agent 使用演示实现，不包含完整业务或模型调用。已接入邮箱密码登录（Better Auth）、Gateway JWT 验签、Redis 限流和 Temporal echo workflow（Backend 启动并查询，Agent Runner 作为 worker 执行）；邮箱验证、找回密码和租户授权尚未实现。
 
 ## 快速开始
 
 环境：Node.js 22.9+、pnpm 10.13.1；Python Worker 需要 Python 3.12+ 和 uv。
 
 ```bash
+pnpm bootstrap     # 检查环境、生成 .env（不覆盖已有）、安装依赖、启动 PostgreSQL/Redis/Temporal、迁移数据库；可重复执行
+pnpm dev
+```
+
+`pnpm bootstrap` 等价于手动执行：
+
+```bash
 pnpm install --frozen-lockfile
 cp .env.example .env
-pnpm infra:up      # PostgreSQL 和 Redis（登录与限流需要）
+pnpm infra:up      # PostgreSQL、Redis 和 Temporal（登录、限流和 Agent 执行需要）
 pnpm db:migrate    # 迁移不随服务启动，需要手动执行
-pnpm dev
 ```
 
 打开 http://localhost:3000 会跳转到 `/login`，先注册账号。
 
-默认启动：Web、Gateway、Backend、Agent Runner。媒体 Worker 单独启动：
+默认启动：Web、Gateway、Backend、Agent Runner（Temporal worker，启动时要求 Temporal 已运行，即先 `pnpm infra:up`）。媒体 Worker 单独启动：
 
 ```bash
 pnpm dev:worker
@@ -33,10 +39,11 @@ pnpm dev:worker
 pnpm infra:up && pnpm db:migrate   # 首次或升级后
 pnpm docker:up
 scripts/smoke-p0a.sh               # 冒烟：Gateway 验签与 Backend 信任边界
+scripts/smoke-p0b.sh               # 冒烟：echo workflow 经 Backend、Temporal、Agent Runner 跑通
 pnpm docker:down
 ```
 
-注意：`docker:down` 与 `infra:down` 使用同一个 Compose 项目，`docker:down` 也会移除 postgres 和 redis 容器（数据卷保留）；之后需要再执行 `pnpm infra:up`。
+注意：开发栈（`pnpm infra:up`，项目名 `creative-dev`）与全栈（`pnpm docker:up`，项目名 `creative-full`）是两个独立的 Compose 项目，`docker:down` 只停全栈；但两者发布相同端口（5432、6379、7233、8080），**不能同时运行**，切换前先停另一个。旧项目名 `docker` 留下的卷 `docker_postgres-data` 已孤立，可 `docker volume rm docker_postgres-data`；新开发库需要重新 `pnpm db:migrate`。
 
 | 组件            | 地址                       |
 | --------------- | -------------------------- |
@@ -44,7 +51,8 @@ pnpm docker:down
 | Gateway         | http://localhost:4000      |
 | API 文档        | http://localhost:4000/docs |
 | Backend（调试） | http://localhost:4001      |
-| Agent Runner    | http://localhost:4100      |
+| Temporal UI     | http://localhost:8080      |
+| Temporal gRPC   | localhost:7233             |
 | Media Worker    | http://localhost:4200      |
 
 ## 项目结构
@@ -68,9 +76,9 @@ pnpm docker:down
 │   │   │   ├── realtime/            # [reserved] SSE/WebSocket 和运行事件推送
 │   │   │   └── webhooks/            # [reserved] 外部供应商回调
 │   │   └── test/                    # 后端测试
-│   └── agent-runner/                # [active] Agent 执行宿主
-│       ├── src/                     # Agent 请求、执行和服务启动
-│       └── test/                    # Agent 服务测试
+│   └── agent-runner/                # [active] Temporal worker（无 HTTP 端口），运行 Agent activity
+│       ├── src/                     # activity、worker 启动和 workflow 打包
+│       └── test/                    # worker 与配置测试
 ├── workers/
 │   └── media-worker-python/         # [active] Python 媒体任务接口和处理 Worker
 ├── packages/
@@ -79,25 +87,22 @@ pnpm docker:down
 │   │       ├── context/             # [reserved] 上下文预算、压缩和快照
 │   │       ├── policy/              # [reserved] 权限、预算和审批策略
 │   │       ├── tools/runtime/       # [reserved] Tool Calling 生命周期
-│   │       ├── tools/adapters/mcp/  # [reserved] MCP Client 和传输适配
 │   │       └── skills/runtime/      # [reserved] Skill 加载和执行
 │   ├── api-client/                  # Web 等客户端使用的类型化 API Client
 │   ├── contracts/                   # API、事件、任务和能力声明
 │   ├── database/                    # 服务端 Drizzle/PostgreSQL 连接和迁移
 │   ├── domain/                      # [reserved] 跨服务领域模型和规则
-│   ├── job-queue/                   # BullMQ 队列工厂和任务基础设施
 │   ├── node-registry/               # [reserved] 画布节点定义和配置注册
 │   ├── observability/               # OpenTelemetry 日志、指标和 Trace 支撑
-│   └── ui/                          # 共享 shadcn/ui 源码和基础组件
+│   ├── ui/                          # 共享 shadcn/ui 源码和基础组件
+│   └── workflows/                   # [active] Temporal workflow（仅确定性代码和契约）
 ├── capabilities/
-│   ├── skills/                      # [reserved] 版本化 Skill 定义和元数据
-│   ├── mcp-servers/                 # [reserved] 具体 MCP Server
-│   └── tool-manifests/              # [reserved] Tool、权限和传输声明
+│   └── skills/                      # [reserved] 版本化 Skill 定义和元数据
 ├── infra/
 │   └── docker/                      # 本地基础设施和完整 Docker Compose
 ├── docs/                            # 架构和扩展边界说明
 ├── tests/                           # 跨服务、契约和端到端测试位置
-├── scripts/                         # [reserved] 工程和验证脚本位置
+├── scripts/                         # 冒烟脚本（smoke-p0a.sh、smoke-p0b.sh）
 ├── .env.example                     # 本地环境变量模板
 ├── package.json                     # 根脚本和工具依赖
 ├── pnpm-workspace.yaml              # pnpm workspace 范围
@@ -112,21 +117,21 @@ apps/web ──> gateway ──> backend
     └── api-client / ui / contracts
 
 services/gateway ──> contracts / observability
-services/backend ──> contracts / observability
-services/backend (future modules) ──> domain / database / job-queue
-services/agent-runner ──> agent-core / contracts / observability
+services/backend ──> contracts / observability / workflows
+services/backend (future modules) ──> domain / database
+services/agent-runner ──> agent-core / workflows / observability
 workers/media-worker-python ──> contracts + Python runtime adapters
 
 agent-core
     ├── context / policy / tools / skills
-    └── capabilities/skills + capabilities/mcp-servers
+    └── capabilities/skills
 ```
 
 - `apps/web` 负责用户界面；`packages/ui` 只提供共享基础组件。
 - `services/gateway` 是独立发布的公网入口；`services/backend` 是独立发布的业务服务。
 - `services/backend` 负责业务 API 和未来的控制面、实时、回调模块，不承担网关职责。
-- `services/agent-runner` 负责长时 Agent 执行；`packages/agent-core` 是可复用内核。
-- `packages/contracts` 定义跨进程数据；`database`、`job-queue`、`observability` 属于服务端基础设施。
+- `services/agent-runner` 是 Temporal worker，负责长时 Agent 执行；`packages/workflows` 只放确定性的 workflow 代码与契约；`packages/agent-core` 是可复用内核。
+- `packages/contracts` 定义跨进程数据；`database`、`observability` 属于服务端基础设施。
 - `capabilities/` 存放可加载或独立运行的能力资产，不等同于 Agent Runtime。
 
 ## 检查命令
