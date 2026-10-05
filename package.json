@@ -16,16 +16,17 @@
     "format:check": "prettier --check .",
     "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker/docker-compose.yml down",
-    "docker:up": "docker compose -f infra/docker/docker-compose.full.yml up -d --build",
-    "docker:down": "docker compose -f infra/docker/docker-compose.full.yml down",
-    "docker:logs": "docker compose -f infra/docker/docker-compose.full.yml logs -f",
+    "docker:up": "docker compose --env-file .env -f infra/docker/docker-compose.full.yml up -d --build",
+    "docker:down": "docker compose --env-file .env -f infra/docker/docker-compose.full.yml down",
+    "docker:logs": "docker compose --env-file .env -f infra/docker/docker-compose.full.yml logs -f",
     "dev:web": "pnpm --filter @creative/web dev",
     "dev:gateway": "pnpm --filter @creative/gateway dev",
     "dev:backend": "pnpm --filter @creative/backend dev",
     "dev:agent": "pnpm --filter @creative/agent-runner dev",
     "dev:worker": "cd workers/media-worker-python && uv run uvicorn src.main:app --reload --host 127.0.0.1 --port 4200",
     "db:generate": "pnpm --filter @creative/database generate",
-    "db:migrate": "pnpm --filter @creative/database migrate"
+    "db:migrate": "pnpm --filter @creative/database migrate",
+    "auth:generate": "pnpm --filter @creative/backend auth:generate && prettier --write packages/database/src/auth-schema.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

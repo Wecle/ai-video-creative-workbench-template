@@ -1,5 +1,6 @@
 {
   "$schema": "https://turborepo.com/schema.json",
+  "agentGuidance": false,
   "tasks": {
     "dev": {
       "cache": false,
@@ -11,6 +12,14 @@
         "BACKEND_URL",
         "BACKEND_PORT",
         "AGENT_RUNNER_PORT",
+        "WEB_ORIGIN",
+        "REDIS_URL",
+        "DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "INTERNAL_AUTH_SECRET",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "TRUST_PROXY",
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         "OTEL_SERVICE_NAME",
         "NEXT_TELEMETRY_DISABLED"
@@ -23,8 +32,16 @@
       "passThroughEnv": ["NEXT_TELEMETRY_DISABLED"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", ".env*"]
     },
-    "lint": { "dependsOn": ["^lint"] },
-    "typecheck": { "dependsOn": ["^typecheck"] },
-    "test": { "dependsOn": ["^test"], "outputs": [] }
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "dependsOn": ["^test"],
+      "outputs": [],
+      "passThroughEnv": ["CI", "DATABASE_URL", "TEST_DATABASE_URL", "REDIS_URL"]
+    }
   }
 }
