@@ -3,10 +3,10 @@ packages:
   - "services/*"
   - "packages/*"
 catalog:
-  typescript: ^5.8.3
+  typescript: ^7.0.2
   zod: ^4.0.10
   yjs: ^13.6.33
-  vitest: ^4.1.11
+  vitest: ^5.0.3
   tsup: ^8.5.0
   "@temporalio/activity": ^1.24.0
   "@temporalio/client": ^1.24.0
