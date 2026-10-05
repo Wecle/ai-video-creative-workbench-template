@@ -6,6 +6,23 @@ export const healthSchema = z.object({
   status: z.literal("ok"),
   service: z.string(),
 });
+export const meResponseSchema = z.object({
+  user: z.object({
+    id: z.string(),
+    name: z.string(),
+    email: z.string(),
+    image: z.string().nullable(),
+  }),
+  workspaces: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      slug: z.string(),
+      role: z.string(),
+    }),
+  ),
+});
+export type MeResponse = z.infer<typeof meResponseSchema>;
 export const agentRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(10000),
   projectId: z.string().max(200).optional(),
