@@ -3,7 +3,7 @@
 面向 AI 视频创作工具的 monorepo 模板：Next.js 前端、Fastify 后端、Agent Runner、媒体 Worker，以及可扩展的 Skill 和 MCP 能力目录。
 
 > [!NOTE]
-> 当前仓库是技术脚手架。画布和 Agent 使用演示实现，不包含完整业务、模型调用或生产级鉴权。
+> 当前仓库是技术脚手架。画布和 Agent 使用演示实现，不包含完整业务或模型调用。已接入邮箱密码登录（Better Auth）、Gateway JWT 验签和 Redis 限流；邮箱验证、找回密码和租户授权尚未实现。
 
 ## 快速开始
 
@@ -12,8 +12,12 @@
 ```bash
 pnpm install --frozen-lockfile
 cp .env.example .env
+pnpm infra:up      # PostgreSQL 和 Redis（登录与限流需要）
+pnpm db:migrate    # 迁移不随服务启动，需要手动执行
 pnpm dev
 ```
+
+打开 http://localhost:3000 会跳转到 `/login`，先注册账号。
 
 默认启动：Web、Gateway、Backend、Agent Runner。媒体 Worker 单独启动：
 
@@ -24,9 +28,15 @@ pnpm dev:worker
 完整 Docker 栈：
 
 ```bash
+# 镜像以 NODE_ENV=production 运行，会拒绝 "dev-only" 占位密钥：先在 .env 里换成真实值
+#   openssl rand -base64 32   （BETTER_AUTH_SECRET 与 INTERNAL_AUTH_SECRET 各生成一个）
+pnpm infra:up && pnpm db:migrate   # 首次或升级后
 pnpm docker:up
+scripts/smoke-p0a.sh               # 冒烟：Gateway 验签与 Backend 信任边界
 pnpm docker:down
 ```
+
+注意：`docker:down` 与 `infra:down` 使用同一个 Compose 项目，`docker:down` 也会移除 postgres 和 redis 容器（数据卷保留）；之后需要再执行 `pnpm infra:up`。
 
 | 组件            | 地址                       |
 | --------------- | -------------------------- |
