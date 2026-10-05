@@ -5,7 +5,11 @@ export default defineConfig({
   platform: "node",
   target: "node22",
   clean: true,
-  noExternal: ["@creative/contracts", "@creative/observability"],
+  noExternal: [
+    "@creative/contracts",
+    "@creative/database",
+    "@creative/observability",
+  ],
   external: [
     "@opentelemetry/api",
     "@opentelemetry/sdk-node",
