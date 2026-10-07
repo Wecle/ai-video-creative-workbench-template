@@ -10,6 +10,7 @@ export type RunEventListener = (event: RunEvent) => void;
 export interface RunEventBus {
   subscribe(runId: string, listener: RunEventListener): Promise<() => void>;
   close(): Promise<void>;
+  listenerCount(runId?: string): number;
 }
 
 export function createRunEventBus(subscriberRedis: Redis): RunEventBus {
@@ -38,6 +39,17 @@ export function createRunEventBus(subscriberRedis: Redis): RunEventBus {
   subscriberRedis.on("message", onMessage);
 
   return {
+    listenerCount(runId?: string): number {
+      if (runId) {
+        return listenersByRun.get(runId)?.size ?? 0;
+      }
+      let total = 0;
+      for (const s of listenersByRun.values()) {
+        total += s.size;
+      }
+      return total;
+    },
+
     async subscribe(
       runId: string,
       listener: RunEventListener,
@@ -51,7 +63,15 @@ export function createRunEventBus(subscriberRedis: Redis): RunEventBus {
       set.add(listener);
 
       if (isFirst) {
-        await subscriberRedis.subscribe(runEventsChannel(runId));
+        try {
+          await subscriberRedis.subscribe(runEventsChannel(runId));
+        } catch (err) {
+          set.delete(listener);
+          if (set.size === 0) {
+            listenersByRun.delete(runId);
+          }
+          throw err;
+        }
       }
 
       let unsubscribed = false;

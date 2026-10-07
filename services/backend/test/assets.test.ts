@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { ASSET_MAX_BYTES } from "@creative/contracts";
 import { schema } from "@creative/database";
 import { createMemoryStorage } from "@creative/storage";
@@ -250,6 +250,48 @@ describe.skipIf(!dbUrl)("backend assets routes", () => {
       .from(assets)
       .where(eq(assets.id, assetId));
     expect(deletedRow).toBeUndefined();
+
+    // 3b. Size mismatch when storage.delete throws: database row is STILL deleted
+    const mismatch2 = await app.inject({
+      method: "POST",
+      url: "/api/v1/assets/upload-url",
+      headers: signedHeaders(
+        "POST",
+        "/api/v1/assets/upload-url",
+        who(user.userId),
+      ),
+      payload: {
+        workspaceId: user.workspaceId,
+        contentType: "image/png",
+        sizeBytes: 10,
+      },
+    });
+    const assetIdErr = mismatch2.json().asset.id;
+    const [assetRowErr] = await db
+      .select()
+      .from(assets)
+      .where(eq(assets.id, assetIdErr));
+    await storage.put(assetRowErr!.key, "mismatch", "image/png");
+    const origDelete = storage.delete.bind(storage);
+    storage.delete = vi
+      .fn()
+      .mockRejectedValue(new Error("Storage delete failure"));
+    const delErrRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/assets/${assetIdErr}/complete`,
+      headers: signedHeaders(
+        "POST",
+        `/api/v1/assets/${assetIdErr}/complete`,
+        who(user.userId),
+      ),
+    });
+    expect(delErrRes.statusCode).toBe(422);
+    const [rowStillDeleted] = await db
+      .select()
+      .from(assets)
+      .where(eq(assets.id, assetIdErr));
+    expect(rowStillDeleted).toBeUndefined();
+    storage.delete = origDelete;
 
     // 4. Create another asset for successful completion
     const up2 = await app.inject({

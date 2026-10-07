@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -156,7 +156,14 @@ export async function assetRoutes(
         headResult.contentType !== asset.contentType
       ) {
         // Delete uploaded object and database row
-        await storage.delete(asset.key);
+        try {
+          await storage.delete(asset.key);
+        } catch (err) {
+          request.log.warn(
+            { err, key: asset.key },
+            "Failed to delete storage object for invalid asset",
+          );
+        }
         await db.delete(assets).where(eq(assets.id, assetId));
         return reply.code(422).send({
           error: "Uploaded asset does not match expected size or content type",
@@ -166,11 +173,25 @@ export async function assetRoutes(
       const [updated] = await db
         .update(assets)
         .set({ status: "ready" })
-        .where(eq(assets.id, assetId))
+        .where(and(eq(assets.id, assetId), eq(assets.status, "pending")))
         .returning();
 
+      if (!updated) {
+        const [current] = await db
+          .select()
+          .from(assets)
+          .where(eq(assets.id, assetId))
+          .limit(1);
+        if (!current) {
+          return reply.code(404).send({ error: "Asset not found" });
+        }
+        return reply.code(200).send({
+          asset: formatAsset(current),
+        });
+      }
+
       return reply.code(200).send({
-        asset: formatAsset(updated ?? asset),
+        asset: formatAsset(updated),
       });
     },
   );

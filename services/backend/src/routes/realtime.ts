@@ -91,6 +91,7 @@ export async function realtimeRoutes(
       const buffer: RunEvent[] = [];
       let live = false;
       let ended = false;
+      let pingInterval: NodeJS.Timeout | null = null;
       const stream = new PassThrough();
 
       const push = (event: RunEvent) => {
@@ -104,44 +105,47 @@ export async function realtimeRoutes(
 
       const unsubscribe = await bus.subscribe(runId, push);
 
-      // 3. Read seq0 before querying database for snapshot
-      const rawSeq = await redis.get(runEventsSeqKey(runId));
-      const seq0 = rawSeq ? Number(rawSeq) : 0;
+      function cleanup() {
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = null;
+        }
+        try {
+          const res = unsubscribe() as unknown;
+          if (res && typeof (res as Promise<void>).catch === "function") {
+            (res as Promise<void>).catch(() => {});
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
 
-      // 4. Read database for latest run and node_runs snapshot
-      const [latestRun] = await db
-        .select({ status: runs.status, error: runs.error })
-        .from(runs)
-        .where(eq(runs.id, runId))
-        .limit(1);
-      const nodeRunRows = await db
-        .select({
-          nodeId: node_runs.nodeId,
-          status: node_runs.status,
-          error: node_runs.error,
-        })
-        .from(node_runs)
-        .where(eq(node_runs.runId, runId));
+      const closeStream = () => {
+        if (!ended) {
+          ended = true;
+          activeConnections.delete(closeStream);
+          cleanup();
+          stream.end();
+        }
+      };
 
-      // 5. Send SSE headers
-      reply.raw.setHeader("Content-Type", "text/event-stream");
-      reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
-      reply.raw.setHeader("Connection", "keep-alive");
-      reply.raw.setHeader("X-Accel-Buffering", "no");
+      activeConnections.add(closeStream);
+      request.raw.on("close", () => {
+        closeStream();
+      });
 
-      reply.send(stream);
-
-      stream.write("retry: 3000\n\n");
-
-      let lastSeq = seq0;
+      if (request.raw.destroyed) {
+        closeStream();
+        return;
+      }
 
       function finish(status: string) {
         if (ended) return;
-        ended = true;
         stream.write(`event: done\ndata: ${JSON.stringify({ status })}\n\n`);
-        cleanup();
-        stream.end();
+        closeStream();
       }
+
+      let lastSeq = 0;
 
       function sendEvent(evt: RunEvent) {
         if (ended) return;
@@ -160,79 +164,100 @@ export async function realtimeRoutes(
         }
       }
 
-      // Write snapshot
-      const snapshot = {
-        type: "snapshot",
-        runId,
-        seq: seq0,
-        status: latestRun?.status ?? runRow.status,
-        error: latestRun?.error ?? undefined,
-        nodes: nodeRunRows.map((nr) => ({
-          nodeId: nr.nodeId,
-          status: nr.status as NodeRunStatus,
-          error: nr.error ?? undefined,
-        })),
-      };
-      stream.write(
-        `id: ${seq0}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
-      );
-
-      // Flush buffer for events > seq0
-      for (const evt of buffer) {
-        if (evt.seq > seq0) {
-          sendEvent(evt);
+      try {
+        // 3. Read seq0 before querying database for snapshot
+        const rawSeq = await redis.get(runEventsSeqKey(runId));
+        if (request.raw.destroyed || ended) {
+          closeStream();
+          return;
         }
-      }
-      live = true;
+        const seq0 = rawSeq ? Number(rawSeq) : 0;
+        lastSeq = seq0;
 
-      // If initial state is terminal, finish immediately
-      const initialStatus = latestRun?.status ?? runRow.status;
-      if (
-        initialStatus === "succeeded" ||
-        initialStatus === "failed" ||
-        initialStatus === "cancelled"
-      ) {
-        finish(initialStatus);
-      }
-
-      // Periodic ping
-      const pingInterval = setInterval(async () => {
-        if (ended) return;
-        try {
-          const current = await redis.get(runEventsSeqKey(runId));
-          const seq = current ? Number(current) : lastSeq;
-          stream.write(`event: ping\ndata: ${JSON.stringify({ seq })}\n\n`);
-        } catch {
-          // Ignore redis ping errors
+        // 4. Read database for latest run and node_runs snapshot
+        const [latestRun] = await db
+          .select({ status: runs.status, error: runs.error })
+          .from(runs)
+          .where(eq(runs.id, runId))
+          .limit(1);
+        if (request.raw.destroyed || ended) {
+          closeStream();
+          return;
         }
-      }, pingIntervalMs);
 
-      function cleanup() {
-        clearInterval(pingInterval);
-        try {
-          const res = unsubscribe() as unknown;
-          if (res && typeof (res as Promise<void>).catch === "function") {
-            (res as Promise<void>).catch(() => {});
+        const nodeRunRows = await db
+          .select({
+            nodeId: node_runs.nodeId,
+            status: node_runs.status,
+            error: node_runs.error,
+          })
+          .from(node_runs)
+          .where(eq(node_runs.runId, runId));
+        if (request.raw.destroyed || ended) {
+          closeStream();
+          return;
+        }
+
+        // 5. Send SSE headers
+        reply.raw.setHeader("Content-Type", "text/event-stream");
+        reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+        reply.raw.setHeader("Connection", "keep-alive");
+        reply.raw.setHeader("X-Accel-Buffering", "no");
+
+        reply.send(stream);
+
+        stream.write("retry: 3000\n\n");
+
+        // Write snapshot
+        const snapshot = {
+          type: "snapshot",
+          runId,
+          seq: seq0,
+          status: latestRun?.status ?? runRow.status,
+          error: latestRun?.error ?? undefined,
+          nodes: nodeRunRows.map((nr) => ({
+            nodeId: nr.nodeId,
+            status: nr.status as NodeRunStatus,
+            error: nr.error ?? undefined,
+          })),
+        };
+        stream.write(
+          `id: ${seq0}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
+        );
+
+        // Flush buffer for events > seq0
+        for (const evt of buffer) {
+          if (evt.seq > seq0) {
+            sendEvent(evt);
           }
-        } catch {
-          // Ignore cleanup errors
         }
-      }
+        live = true;
 
-      const closeStream = () => {
-        if (!ended) {
-          ended = true;
-          cleanup();
-          stream.end();
+        // If initial state is terminal, finish immediately
+        const initialStatus = latestRun?.status ?? runRow.status;
+        if (
+          initialStatus === "succeeded" ||
+          initialStatus === "failed" ||
+          initialStatus === "cancelled"
+        ) {
+          finish(initialStatus);
         }
-      };
 
-      activeConnections.add(closeStream);
-
-      request.raw.on("close", () => {
-        activeConnections.delete(closeStream);
+        // Periodic ping
+        pingInterval = setInterval(async () => {
+          if (ended) return;
+          try {
+            const current = await redis.get(runEventsSeqKey(runId));
+            const seq = current ? Number(current) : lastSeq;
+            stream.write(`event: ping\ndata: ${JSON.stringify({ seq })}\n\n`);
+          } catch {
+            // Ignore redis ping errors
+          }
+        }, pingIntervalMs);
+      } catch (err) {
         closeStream();
-      });
+        throw err;
+      }
     },
   );
 }

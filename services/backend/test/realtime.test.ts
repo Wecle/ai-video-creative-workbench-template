@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import http from "node:http";
 import { Redis } from "ioredis";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runEventsChannel, runEventsSeqKey } from "@creative/contracts";
 import { schema } from "@creative/database";
 import { createRunEventBus } from "../src/realtime/run-event-bus";
@@ -306,5 +307,276 @@ describe("backend realtime SSE streaming", () => {
 
     const res = await injectPromise;
     expect(res.statusCode).toBe(200);
+  });
+
+  it("ensures PUBSUB NUMSUB is 0 after client disconnects", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const bus = createRunEventBus(subRedis);
+    const { app, db, close } = createTestApp(dbUrl, { redis, bus });
+    const user = await createUserWithWorkspace(db, "numsub-user");
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      user.userId,
+      user.workspaceId,
+    );
+
+    const [runRow] = await db
+      .insert(runs)
+      .values({
+        canvasId,
+        projectId,
+        workspaceId: user.workspaceId,
+        createdBy: user.userId,
+        canvasVersion: 1,
+        snapshot: {},
+        workflowId: "wf-numsub",
+        status: "running",
+      })
+      .returning();
+
+    const channel = runEventsChannel(runRow.id);
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as { port: number };
+
+    const urlPath = `/api/v1/realtime/runs/${runRow.id}/events`;
+    const headers = signedHeaders("GET", urlPath, {
+      authType: "jwt",
+      userId: user.userId,
+    });
+
+    const clientReq = http.request({
+      hostname: "127.0.0.1",
+      port: address.port,
+      path: urlPath,
+      method: "GET",
+      headers,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      clientReq.on("response", (res) => {
+        res.on("data", () => {
+          resolve();
+        });
+      });
+      clientReq.on("error", reject);
+      clientReq.end();
+    });
+
+    // While client is connected, NUMSUB is at least 1
+    const resBefore = await redis.pubsub("NUMSUB", channel);
+    expect(Number(resBefore[1])).toBeGreaterThanOrEqual(1);
+
+    // Client disconnects
+    clientReq.destroy();
+
+    // Verify NUMSUB becomes 0
+    await vi.waitFor(
+      async () => {
+        const resAfter = await redis.pubsub("NUMSUB", channel);
+        expect(Number(resAfter[1])).toBe(0);
+      },
+      { timeout: 2000, interval: 50 },
+    );
+
+    expect(bus.listenerCount(runRow.id)).toBe(0);
+
+    await close();
+    redis.disconnect();
+  });
+
+  it("does not leak subscription if redis.get throws error", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const bus = createRunEventBus(subRedis);
+    const { app, db, close } = createTestApp(dbUrl, { redis, bus });
+    const user = await createUserWithWorkspace(db, "throw-get-user");
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      user.userId,
+      user.workspaceId,
+    );
+
+    const [runRow] = await db
+      .insert(runs)
+      .values({
+        canvasId,
+        projectId,
+        workspaceId: user.workspaceId,
+        createdBy: user.userId,
+        canvasVersion: 1,
+        snapshot: {},
+        workflowId: "wf-throw-get",
+        status: "running",
+      })
+      .returning();
+
+    const channel = runEventsChannel(runRow.id);
+
+    // Make redis.get throw on sequence key
+    const originalGet = redis.get.bind(redis);
+    vi.spyOn(redis, "get").mockImplementation(async (key) => {
+      if (typeof key === "string" && key.includes(runRow.id)) {
+        throw new Error("Simulated redis.get failure");
+      }
+      return originalGet(key);
+    });
+
+    const url = `/api/v1/realtime/runs/${runRow.id}/events`;
+    const res = await app.inject({
+      method: "GET",
+      url,
+      headers: signedHeaders("GET", url, {
+        authType: "jwt",
+        userId: user.userId,
+      }),
+    });
+
+    expect(res.statusCode).toBe(500);
+
+    // Must not leak bus listener or redis subscription
+    expect(bus.listenerCount(runRow.id)).toBe(0);
+    const resSub = await redis.pubsub("NUMSUB", channel);
+    expect(Number(resSub[1])).toBe(0);
+
+    await close();
+    redis.disconnect();
+  });
+
+  it("cleans up listener on SUBSCRIBE failure and subsequent subscribe receives events", async () => {
+    const subRedis = new Redis(rUrl);
+    const pubRedis = new Redis(rUrl);
+    const bus = createRunEventBus(subRedis);
+    const runId = randomUUID();
+    const channel = runEventsChannel(runId);
+
+    const originalSubscribe = subRedis.subscribe.bind(subRedis);
+    let failFirst = true;
+    vi.spyOn(subRedis, "subscribe").mockImplementation(async (...args) => {
+      if (failFirst) {
+        failFirst = false;
+        throw new Error("Simulated SUBSCRIBE failure");
+      }
+      return originalSubscribe(...args);
+    });
+
+    const listener1 = vi.fn();
+    await expect(bus.subscribe(runId, listener1)).rejects.toThrow(
+      "Simulated SUBSCRIBE failure",
+    );
+    expect(bus.listenerCount(runId)).toBe(0);
+
+    // Second subscription succeeds and receives events
+    const receivedEvents: unknown[] = [];
+    const unsubscribe2 = await bus.subscribe(runId, (evt) => {
+      receivedEvents.push(evt);
+    });
+    expect(bus.listenerCount(runId)).toBe(1);
+
+    // Publish event
+    await pubRedis.publish(
+      channel,
+      JSON.stringify({
+        type: "run.status",
+        runId,
+        seq: 1,
+        status: "running",
+      }),
+    );
+
+    await vi.waitFor(() => expect(receivedEvents).toHaveLength(1));
+    expect((receivedEvents[0] as { seq: number }).seq).toBe(1);
+
+    await unsubscribe2();
+    expect(bus.listenerCount(runId)).toBe(0);
+
+    await bus.close();
+    pubRedis.disconnect();
+  });
+
+  it("reflects incremented seq in subsequent ping event after redis.incr", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const bus = createRunEventBus(subRedis);
+    const { app, db, close } = createTestApp(dbUrl, {
+      redis,
+      bus,
+      pingIntervalMs: 50,
+    });
+    const user = await createUserWithWorkspace(db, "incr-user");
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      user.userId,
+      user.workspaceId,
+    );
+
+    const [runRow] = await db
+      .insert(runs)
+      .values({
+        canvasId,
+        projectId,
+        workspaceId: user.workspaceId,
+        createdBy: user.userId,
+        canvasVersion: 1,
+        snapshot: {},
+        workflowId: "wf-incr",
+        status: "running",
+      })
+      .returning();
+
+    const seqKey = runEventsSeqKey(runRow.id);
+    await redis.set(seqKey, "2");
+
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as { port: number };
+
+    const urlPath = `/api/v1/realtime/runs/${runRow.id}/events`;
+    const headers = signedHeaders("GET", urlPath, {
+      authType: "jwt",
+      userId: user.userId,
+    });
+
+    const clientReq = http.request({
+      hostname: "127.0.0.1",
+      port: address.port,
+      path: urlPath,
+      method: "GET",
+      headers,
+    });
+
+    const pings: number[] = [];
+
+    clientReq.on("response", (res) => {
+      res.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        const matches = text.matchAll(/event: ping\ndata: (\{.*?\})/g);
+        for (const m of matches) {
+          const parsed = JSON.parse(m[1]!);
+          pings.push(parsed.seq);
+        }
+      });
+    });
+    clientReq.end();
+
+    // Wait for first ping (seq = 2)
+    await vi.waitFor(() => expect(pings.length).toBeGreaterThanOrEqual(1));
+    expect(pings[0]).toBe(2);
+
+    // Manually INCR sequence key in Redis
+    await redis.incr(seqKey); // 3
+    await redis.incr(seqKey); // 4
+
+    // Wait for next ping to have seq >= 4
+    await vi.waitFor(
+      () => {
+        expect(pings.some((s) => s >= 4)).toBe(true);
+      },
+      { timeout: 2000, interval: 50 },
+    );
+
+    clientReq.destroy();
+    await redis.del(seqKey);
+    await close();
+    redis.disconnect();
   });
 });
