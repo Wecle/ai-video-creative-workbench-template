@@ -271,6 +271,82 @@ describe("gateway realtime tickets", () => {
     ).toBe(403);
   });
 
+  it("issues tickets for agentRunId and enforces cross-resource isolation", async () => {
+    const { upstream, gateway } = await boot();
+    const agentRunId = "a0000000-0000-4000-8000-000000000001";
+    const otherAgentRunId = "a0000000-0000-4000-8000-000000000002";
+
+    // Issue agent ticket
+    const agentIssueRes = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentRunId }),
+      },
+    );
+    expect(agentIssueRes.status).toBe(200);
+    const { ticket: agentTicket } = (await agentIssueRes.json()) as {
+      ticket: string;
+    };
+
+    // Issue standard run ticket
+    const runIssueRes = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId }),
+      },
+    );
+    expect(runIssueRes.status).toBe(200);
+    const { ticket: runTicket } = (await runIssueRes.json()) as {
+      ticket: string;
+    };
+
+    // 1. Run ticket cannot open agent stream (403)
+    const runOnAgentRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${runTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(runOnAgentRes.status).toBe(403);
+
+    // 2. Agent ticket cannot open normal run stream (403)
+    const agentOnRunRes = await fetch(
+      `${gateway.url}/api/v1/realtime/runs/${runId}/events?ticket=${agentTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(agentOnRunRes.status).toBe(403);
+
+    // 3. Agent ticket cannot open another agent run stream (403)
+    const agentOnOtherRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${otherAgentRunId}/events?ticket=${agentTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(agentOnOtherRes.status).toBe(403);
+
+    // 4. Since above failed attempts didn't match resource, ticket was not consumed!
+    // Now agent ticket accesses its own agent stream successfully (200)
+    const goodAgentRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${agentTicket}&lastEventId=5`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(goodAgentRes.status).toBe(200);
+    const last = upstream.last();
+    expect(last.url).toBe(
+      `/api/v1/realtime/agent/runs/${agentRunId}/events?lastEventId=5`,
+    );
+    expect(last.headers["x-internal-auth-type"]).toBe("ticket");
+    expect(last.headers["x-internal-user-id"]).toBe(TEST_USER_ID);
+
+    // 5. Subsequent attempt with same agent ticket is rejected (401 single-use)
+    const reuseAgentRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${agentTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(reuseAgentRes.status).toBe(401);
+  });
+
   it("does not accept ticket in protected routes like /api/v1/me, but Bearer still works in realtime", async () => {
     const { gateway } = await boot();
     const issueRes = await authedFetch(

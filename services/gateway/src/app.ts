@@ -302,7 +302,9 @@ export function buildApp({
         const ticketResponse = await issueRealtimeTicket({
           secret: ticketSecret,
           userId,
-          runId: parsed.data.runId,
+          runId: "runId" in parsed.data ? parsed.data.runId : undefined,
+          agentRunId:
+            "agentRunId" in parsed.data ? parsed.data.agentRunId : undefined,
           baseUrl: gatewayPublicUrl,
         });
         return reply.code(200).send(ticketResponse);

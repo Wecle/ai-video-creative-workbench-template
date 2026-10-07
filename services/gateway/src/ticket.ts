@@ -11,8 +11,14 @@ import type { RealtimeTicketResponse } from "@creative/contracts";
 // Path: /api/v1/realtime/runs/<uuid>/... -> run:<uuid>
 const RUN_RESOURCE_REGEX =
   /^\/api\/v1\/realtime\/runs\/([0-9a-fA-F-]{36})(?:\/|$)/;
+// Path: /api/v1/realtime/agent/runs/<uuid>/... -> agent-run:<uuid>
+const AGENT_RUN_RESOURCE_REGEX =
+  /^\/api\/v1\/realtime\/agent\/runs\/([0-9a-fA-F-]{36})(?:\/|$)/;
 
 export function extractResourceFromPath(pathname: string): string | null {
+  const agentMatch = AGENT_RUN_RESOURCE_REGEX.exec(pathname);
+  if (agentMatch) return `agent-run:${agentMatch[1]}`;
+
   const match = RUN_RESOURCE_REGEX.exec(pathname);
   if (!match) return null;
   return `run:${match[1]}`;
@@ -21,14 +27,23 @@ export function extractResourceFromPath(pathname: string): string | null {
 export async function issueRealtimeTicket(options: {
   secret: string;
   userId: string;
-  runId: string;
+  runId?: string;
+  agentRunId?: string;
+  resource?: string;
   baseUrl: string;
 }): Promise<RealtimeTicketResponse> {
+  const res =
+    options.resource ??
+    (options.agentRunId
+      ? `agent-run:${options.agentRunId}`
+      : options.runId
+        ? `run:${options.runId}`
+        : "");
   const jti = randomBytes(16).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
   const secretKey = new TextEncoder().encode(options.secret);
   const ticket = await new SignJWT({
-    res: `run:${options.runId}`,
+    res,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(REALTIME_TICKET_ISSUER)
