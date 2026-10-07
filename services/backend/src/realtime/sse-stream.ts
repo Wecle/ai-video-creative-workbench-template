@@ -147,6 +147,7 @@ export async function openRunStream<
       return;
     }
     const seq0 = rawSeq ? Number(rawSeq) : 0;
+    lastSeq = seq0;
 
     const { snapshot, initialTerminalStatus } = await loadSnapshot(seq0);
     if (request.raw.destroyed || ended) {
@@ -171,7 +172,8 @@ export async function openRunStream<
       `id: ${seq0}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
     );
 
-    for (const evt of buffer) {
+    const sortedBuffer = [...buffer].sort((a, b) => a.seq - b.seq);
+    for (const evt of sortedBuffer) {
       if (evt.seq > seq0) {
         sendEvent(evt);
       }

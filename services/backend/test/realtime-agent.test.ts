@@ -698,7 +698,10 @@ describe("backend realtime agent SSE streaming", () => {
         headers,
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() =>
+        expect(agentBus.listenerCount(runId)).toBeGreaterThan(0),
+      );
+      await new Promise((r) => setTimeout(r, 50));
 
       await redis.publish(
         channel,

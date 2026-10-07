@@ -201,7 +201,8 @@ describe("backend realtime SSE streaming", () => {
     });
 
     // Give time for initial subscription & snapshot
-    await new Promise((r) => setTimeout(r, 100));
+    await vi.waitFor(() => expect(bus.listenerCount(runId)).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
 
     // Publish incremental node status event
     await redis.publish(
@@ -299,7 +300,9 @@ describe("backend realtime SSE streaming", () => {
       headers,
     });
 
-    await new Promise((r) => setTimeout(r, 100));
+    await vi.waitFor(() =>
+      expect(bus.listenerCount(runRow.id)).toBeGreaterThan(0),
+    );
 
     // app.close() must complete without hanging
     await expect(close()).resolves.not.toThrow();
