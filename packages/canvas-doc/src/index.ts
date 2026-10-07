@@ -49,5 +49,7 @@ export {
 } from "./codec";
 export { inspectState, type StateInspection } from "./inspect";
 export { MIGRATIONS } from "./migrate";
+export { docFromSnapshot } from "./from-snapshot";
+export { applyPatch, type PatchResult } from "./patch";
 /** Persistence controllers treat every origin except these as a change worth saving. */
 export { isPersistableOrigin } from "./origin";
