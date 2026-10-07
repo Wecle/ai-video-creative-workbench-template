@@ -62,7 +62,9 @@ export function buildContext(input: BuildContextInput): AgentContext {
   const allowedSkillsSet = new Set(profile.skills);
   const profileSkills = skills.filter((s) => allowedSkillsSet.has(s.name));
   if (profileSkills.length > 0) {
-    const skillLines = profileSkills.map((s) => `- ${s.name}: ${s.description}`);
+    const skillLines = profileSkills.map(
+      (s) => `- ${s.name}: ${s.description}`,
+    );
     sections.push(`Available Skills:\n${skillLines.join("\n")}`);
   }
 
@@ -73,7 +75,9 @@ export function buildContext(input: BuildContextInput): AgentContext {
     const cleanTitle = sanitizeTitle(n.title);
     const idStr = JSON.stringify(n.id);
     const typeStr = JSON.stringify(n.type);
-    const titlePart = cleanTitle ? `, title: ${JSON.stringify(cleanTitle)}` : "";
+    const titlePart = cleanTitle
+      ? `, title: ${JSON.stringify(cleanTitle)}`
+      : "";
     return `- id: ${idStr}, type: ${typeStr}${titlePart}`;
   });
 
@@ -90,9 +94,7 @@ export function buildContext(input: BuildContextInput): AgentContext {
       allowedSkillsSet.has(s),
     );
     if (validCandidateSkills.length > 0) {
-      hints.push(
-        `Suggested Skills: ${validCandidateSkills.join(", ")}`,
-      );
+      hints.push(`Suggested Skills: ${validCandidateSkills.join(", ")}`);
     }
     if (routeDecision.targetNodeIds.length > 0) {
       hints.push(`Target Nodes: ${routeDecision.targetNodeIds.join(", ")}`);

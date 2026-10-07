@@ -137,9 +137,7 @@ describe("agentLoopWorkflow integration with real Redis, DB and activities", () 
     await testDb?.cleanup();
   });
 
-  async function executeLoopWithChunkMode(
-    chunkMode: "single" | "multi50",
-  ) {
+  async function executeLoopWithChunkMode(chunkMode: "single" | "multi50") {
     const runId = randomUUID();
     const userId = "user-1";
     const channel = agentEventsChannel(runId);

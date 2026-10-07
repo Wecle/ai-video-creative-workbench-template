@@ -116,7 +116,10 @@ describe("buildContext activity", () => {
     const fs = await import("node:fs/promises");
     const skillPath = resolve(skillsDir, "shot-list/SKILL.md");
     const content = await fs.readFile(skillPath, "utf-8");
-    const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = content
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
 
     const runId = randomUUID();
     await testDb.client`

@@ -72,4 +72,3 @@ describe("tool names and registry", () => {
     expect(registry.getCanonicalName(modelName)).toBe("a.b_c");
   });
 });
-

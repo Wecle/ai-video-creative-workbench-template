@@ -99,7 +99,9 @@ describe("buildContext", () => {
       },
     });
     expect(ctx.system).toContain('id: "n\\"special"');
-    expect(ctx.system).toContain('title: "Quote \\"hello\\" and backslash \\\\"');
+    expect(ctx.system).toContain(
+      'title: "Quote \\"hello\\" and backslash \\\\"',
+    );
   });
 
   it("filters skills by profile allowed skills", () => {
@@ -122,7 +124,10 @@ describe("buildContext", () => {
       "../../../capabilities/skills/shot-list/SKILL.md",
     );
     const content = await fs.readFile(skillPath, "utf-8");
-    const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = content
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
 
     const ctx = buildContext(baseInput);
 

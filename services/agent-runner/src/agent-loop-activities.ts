@@ -4,10 +4,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema } from "@creative/database";
 import { applyPatch, docFromSnapshot } from "@creative/canvas-doc";
 import { canvasPatchSchema, type CanvasSnapshot } from "@creative/contracts";
-import {
-  buildContext,
-  createIntentRouter,
-} from "@creative/agent-core/pure";
+import { buildContext, createIntentRouter } from "@creative/agent-core/pure";
 import { createToolRegistry, resolveProfile } from "@creative/agent-core";
 import {
   createBuiltinToolProvider,
