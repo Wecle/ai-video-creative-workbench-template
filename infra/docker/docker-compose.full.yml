@@ -155,7 +155,7 @@ services:
       REDIS_URL: redis://redis:6379
       WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN in .env (public origin of the web app)}
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:?Set INTERNAL_AUTH_SECRET in .env (openssl rand -base64 32)}
-      GATEWAY_TICKET_SECRET: ${GATEWAY_TICKET_SECRET_FULL:-${GATEWAY_TICKET_SECRET:?Set GATEWAY_TICKET_SECRET in .env}}
+      GATEWAY_TICKET_SECRET: ${GATEWAY_TICKET_SECRET:?Set GATEWAY_TICKET_SECRET in .env}
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:4000}
       REALTIME_MAX_CONNECTION_SECONDS: ${REALTIME_MAX_CONNECTION_SECONDS:-3600}
       # Production mode requires it. Default: private ranges, which cover the Compose
