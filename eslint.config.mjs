@@ -15,6 +15,7 @@ const agentCorePureFiles = [
   "packages/agent-core/src/context/**/*.ts",
   "packages/agent-core/src/router/**/*.ts",
   "packages/agent-core/src/profiles/types.ts",
+  "packages/agent-core/src/profiles/general.ts",
   "packages/agent-core/src/tools/names.ts",
 ];
 
