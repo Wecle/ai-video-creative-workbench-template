@@ -303,6 +303,7 @@ describe("backend realtime SSE streaming", () => {
     await vi.waitFor(() =>
       expect(bus.listenerCount(runRow.id)).toBeGreaterThan(0),
     );
+    await new Promise((r) => setTimeout(r, 100));
 
     // app.close() must complete without hanging
     await expect(close()).resolves.not.toThrow();
