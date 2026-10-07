@@ -895,4 +895,296 @@ describe("agentLoopWorkflow", () => {
     expect(lastRecord?.status).toBe("failed");
     expect(lastRecord?.error).toBe("MODEL_ERROR");
   });
+
+  it("prioritizes model tool call over router candidateSkills and still enters approval with requested profile (B5.2)", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    const toolCallId = "call-route-override";
+    const progressRecords: RecordProgressActivityInput[] = [];
+    let capturedSystem = "";
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        return createDefaultContext({
+          system: "Profile other prompt",
+        });
+      },
+      async llmStep({ system, index }: LlmStepActivityInput) {
+        capturedSystem = system;
+        if (index === 0) {
+          return {
+            text: "Model ignores shot-list and applies patch",
+            toolCalls: [
+              {
+                toolCallId,
+                toolName: "canvas.applyPatch",
+                input: { summary: "patch", ops: [] },
+              },
+            ],
+            finishReason: "tool-calls",
+            usage: { totalTokens: 100 },
+          };
+        }
+        return {
+          text: "Finished",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: { totalTokens: 50 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "Prepared patch" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "Executed patch" };
+      },
+      async recordProgress(input) {
+        progressRecords.push(input);
+      },
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    const handle = await env.client.workflow.start(AGENT_LOOP_WORKFLOW_TYPE, {
+      taskQueue,
+      workflowId: agentLoopWorkflowId(userId, runId),
+      args: [{ runId, userId }],
+    });
+
+    const executionPromise = worker.runUntil(handle.result());
+
+    while (!progressRecords.some((p) => p.status === "waiting_approval")) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    expect(capturedSystem).toBe("Profile other prompt");
+    const waitingRecord = progressRecords.find(
+      (p) => p.status === "waiting_approval",
+    );
+    expect(waitingRecord?.state.proposals[0]?.toolName).toBe(
+      "canvas.applyPatch",
+    );
+
+    await handle.signal(agentApprovalSignal, {
+      toolCallId,
+      decision: "approve",
+    });
+
+    const result = await executionPromise;
+    expect(result).toEqual({ status: "completed", outcome: "finished" });
+  });
+
+  it("enforces approval for write tools even when router confidence is 1 and suggests write tool (M5)", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    const toolCallId = "call-conf1";
+    let waitingApprovalReached = false;
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        return createDefaultContext({
+          system:
+            "Routing hints: Suggested Skills: canvas.applyPatch (confidence: 1)",
+        });
+      },
+      async llmStep({ index }: LlmStepActivityInput) {
+        if (index === 0) {
+          return {
+            text: "Calling write tool with router confidence 1",
+            toolCalls: [
+              {
+                toolCallId,
+                toolName: "canvas.applyPatch",
+                input: { summary: "write", ops: [] },
+              },
+            ],
+            finishReason: "tool-calls",
+            usage: { totalTokens: 100 },
+          };
+        }
+        return {
+          text: "Done",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: { totalTokens: 50 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "Prepared" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "Done" };
+      },
+      async recordProgress(input) {
+        if (input.status === "waiting_approval") {
+          waitingApprovalReached = true;
+        }
+      },
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    const handle = await env.client.workflow.start(AGENT_LOOP_WORKFLOW_TYPE, {
+      taskQueue,
+      workflowId: agentLoopWorkflowId(userId, runId),
+      args: [{ runId, userId }],
+    });
+
+    const executionPromise = worker.runUntil(handle.result());
+
+    while (!waitingApprovalReached) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    expect(waitingApprovalReached).toBe(true);
+
+    await handle.signal(agentApprovalSignal, {
+      toolCallId,
+      decision: "approve",
+    });
+
+    await executionPromise;
+  });
+
+  it("profile without canvas.applyPatch ends without approval and reflects profile system prompt (D11)", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    let capturedSystem = "";
+    let reachedWaitingApproval = false;
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        return createDefaultContext({
+          system: "Read-only reviewer profile",
+          tools: [
+            {
+              name: "skill.load",
+              modelName: "skill_load",
+              risk: "read",
+            },
+          ],
+        });
+      },
+      async llmStep({ system, index }: LlmStepActivityInput) {
+        capturedSystem = system;
+        if (index === 0) {
+          return {
+            text: "Calling read tool",
+            toolCalls: [
+              {
+                toolCallId: "call-read-1",
+                toolName: "skill.load",
+                input: { name: "shot-list" },
+              },
+            ],
+            finishReason: "tool-calls",
+            usage: { totalTokens: 100 },
+          };
+        }
+        return {
+          text: "Finished reading",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: { totalTokens: 50 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "prep" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "skill content" };
+      },
+      async recordProgress(input) {
+        if (input.status === "waiting_approval") {
+          reachedWaitingApproval = true;
+        }
+      },
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    const result = await worker.runUntil(
+      env.client.workflow.execute(AGENT_LOOP_WORKFLOW_TYPE, {
+        taskQueue,
+        workflowId: agentLoopWorkflowId(userId, runId),
+        args: [{ runId, userId }],
+      }),
+    );
+
+    expect(result).toEqual({ status: "completed", outcome: "finished" });
+    expect(reachedWaitingApproval).toBe(false);
+    expect(capturedSystem).toBe("Read-only reviewer profile");
+  });
+
+  it("handles unretryable activity failure by recording WORKFLOW_FAILED progress and rethrowing (B4)", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    const progressRecords: RecordProgressActivityInput[] = [];
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        throw ApplicationFailure.nonRetryable(
+          "Unrecoverable DB error",
+          "DatabaseError",
+        );
+      },
+      async llmStep() {
+        return {
+          text: "",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: { totalTokens: 0 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async recordProgress(input) {
+        progressRecords.push(input);
+      },
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    await expect(
+      worker.runUntil(
+        env.client.workflow.execute(AGENT_LOOP_WORKFLOW_TYPE, {
+          taskQueue,
+          workflowId: agentLoopWorkflowId(userId, runId),
+          args: [{ runId, userId }],
+        }),
+      ),
+    ).rejects.toThrow();
+
+    const lastRecord = progressRecords[progressRecords.length - 1];
+    expect(lastRecord?.status).toBe("failed");
+    expect(lastRecord?.error).toBe("WORKFLOW_FAILED");
+  });
 });

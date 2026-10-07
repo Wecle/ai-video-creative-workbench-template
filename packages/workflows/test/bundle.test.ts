@@ -14,6 +14,8 @@ describe("workflow bundling", () => {
     expect(code).toContain("echoWorkflow");
     expect(code).toContain("agentLoopWorkflow");
     expect(code).not.toContain("streamText");
+    expect(code).not.toContain("ZodObject");
+    expect(code).not.toContain("zod");
   }, 60_000);
 
   it("rejects a workflow that imports a Node built-in", async () => {

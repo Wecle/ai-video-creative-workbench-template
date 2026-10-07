@@ -38,9 +38,10 @@ const { buildContext } = proxyActivities<
 });
 
 const { llmStep } = proxyActivities<Pick<AgentLoopActivities, "llmStep">>({
-  startToCloseTimeout: "3 minutes",
+  startToCloseTimeout: "2 minutes",
+  heartbeatTimeout: "30 seconds",
   retry: {
-    maximumAttempts: 2,
+    maximumAttempts: 3,
     nonRetryableErrorTypes: ["ModelRequestError"],
   },
 });
@@ -79,99 +80,118 @@ export async function agentLoopWorkflow(
     }
   });
 
-  const ctx = await buildContext({ runId });
-
   const steps: AgentLoopStep[] = [];
   const proposals: AgentLoopProposal[] = [];
-  const messages: AgentMessage[] = [...ctx.messages];
-  let spentCredits = 0;
 
-  await recordProgress({
-    runId,
-    version: version++,
-    status: "running",
-    state: { steps, proposals },
-    events: [
-      {
-        type: "agent.run.status",
-        runId,
-        seq: 1,
-        status: "running",
-      },
-    ],
-  });
+  try {
+    const ctx = await buildContext({ runId });
 
-  const maxSteps = ctx.policy.budget.maxSteps;
+    const messages: AgentMessage[] = [...ctx.messages];
+    let spentCredits = 0;
 
-  for (let index = 0; index < maxSteps; index++) {
-    if (budgetExceeded(spentCredits, ctx.policy.budget)) {
-      await recordProgress({
-        runId,
-        version: version++,
-        status: "completed",
-        outcome: "budget_exceeded",
-        state: { steps, proposals },
-        events: [
-          {
-            type: "agent.run.status",
-            runId,
-            seq: 1,
-            status: "completed",
-            outcome: "budget_exceeded",
-          },
-        ],
-      });
-      return { status: "completed", outcome: "budget_exceeded" };
-    }
+    await recordProgress({
+      runId,
+      version: version++,
+      status: "running",
+      state: { steps, proposals },
+      events: [
+        {
+          type: "agent.run.status",
+          runId,
+          seq: 1,
+          status: "running",
+        },
+      ],
+    });
 
-    const stepId = `s${index}`;
-    let stepResult;
-    try {
-      stepResult = await llmStep({
-        runId,
+    const maxSteps = ctx.policy.budget.maxSteps;
+
+    for (let index = 0; index < maxSteps; index++) {
+      if (budgetExceeded(spentCredits, ctx.policy.budget)) {
+        await recordProgress({
+          runId,
+          version: version++,
+          status: "completed",
+          outcome: "budget_exceeded",
+          state: { steps, proposals },
+          events: [
+            {
+              type: "agent.run.status",
+              runId,
+              seq: 1,
+              status: "completed",
+              outcome: "budget_exceeded",
+            },
+          ],
+        });
+        return { status: "completed", outcome: "budget_exceeded" };
+      }
+
+      const stepId = `s${index}`;
+      let stepResult;
+      try {
+        stepResult = await llmStep({
+          runId,
+          stepId,
+          index,
+          system: ctx.system,
+          messages,
+          tools: ctx.tools,
+        });
+      } catch {
+        await recordProgress({
+          runId,
+          version: version++,
+          status: "failed",
+          error: "MODEL_ERROR",
+          state: { steps, proposals },
+          events: [
+            {
+              type: "agent.run.status",
+              runId,
+              seq: 1,
+              status: "failed",
+              error: "MODEL_ERROR",
+            },
+          ],
+        });
+        return { status: "failed", error: "MODEL_ERROR" };
+      }
+
+      spentCredits += estimateStepCost(stepResult.usage, ctx.policy.budget);
+      const loopStep: AgentLoopStep = {
         stepId,
         index,
-        system: ctx.system,
-        messages,
-        tools: ctx.tools,
-      });
-    } catch {
+        text: stepResult.text,
+        finishReason: stepResult.finishReason,
+      };
+      steps.push(loopStep);
+
       await recordProgress({
         runId,
         version: version++,
-        status: "failed",
-        error: "MODEL_ERROR",
+        status: "running",
         state: { steps, proposals },
         events: [
           {
-            type: "agent.run.status",
+            type: "agent.step.completed",
             runId,
             seq: 1,
-            status: "failed",
-            error: "MODEL_ERROR",
+            stepId,
+            text: stepResult.text,
+            finishReason: stepResult.finishReason,
           },
         ],
       });
-      return { status: "failed", error: "MODEL_ERROR" };
-    }
 
-    spentCredits += estimateStepCost(stepResult.usage, ctx.policy.budget);
-    const loopStep: AgentLoopStep = {
-      stepId,
-      index,
-      text: stepResult.text,
-      finishReason: stepResult.finishReason,
-    };
-    steps.push(loopStep);
-
-    if (stepResult.toolCalls.length === 0) {
-      await recordProgress({
-        runId,
-        version: version++,
-        status: "completed",
-        outcome: "finished",
-        state: { steps, proposals },
-        events: [
+      if (stepResult.toolCalls.length === 0) {
+        await recordProgress({
+          runId,
+          version: version++,
+          status: "completed",
+          outcome: "finished",
+          state: { steps, proposals },
+          events: [
           {
             type: "agent.run.status",
             runId,
@@ -565,21 +585,44 @@ export async function agentLoopWorkflow(
     }
   }
 
-  await recordProgress({
-    runId,
-    version: version++,
-    status: "completed",
-    outcome: "max_steps",
-    state: { steps, proposals },
-    events: [
-      {
-        type: "agent.run.status",
+    await recordProgress({
+      runId,
+      version: version++,
+      status: "completed",
+      outcome: "max_steps",
+      state: { steps, proposals },
+      events: [
+        {
+          type: "agent.run.status",
+          runId,
+          seq: 1,
+          status: "completed",
+          outcome: "max_steps",
+        },
+      ],
+    });
+    return { status: "completed", outcome: "max_steps" };
+  } catch (err) {
+    try {
+      await recordProgress({
         runId,
-        seq: 1,
-        status: "completed",
-        outcome: "max_steps",
-      },
-    ],
-  });
-  return { status: "completed", outcome: "max_steps" };
+        version: version++,
+        status: "failed",
+        error: "WORKFLOW_FAILED",
+        state: { steps, proposals },
+        events: [
+          {
+            type: "agent.run.status",
+            runId,
+            seq: 1,
+            status: "failed",
+            error: "WORKFLOW_FAILED",
+          },
+        ],
+      });
+    } catch {
+      // Ignore secondary error while recording progress
+    }
+    throw err;
+  }
 }
