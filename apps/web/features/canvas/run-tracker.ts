@@ -45,6 +45,9 @@ export type TrackRunOptions = {
   onError?: (error: unknown) => void;
   EventSourceClass?: EventSourceFactory;
   pollingInitialDelayMs?: number;
+  maxReconnectAttempts?: number;
+  initialBackoffMs?: number;
+  maxBackoffMs?: number;
 };
 
 export type RunTracker = {
@@ -123,6 +126,9 @@ export function trackRun(options: TrackRunOptions): RunTracker {
     runId: options.runId,
     fetchTicket: options.api.createRealtimeTicket,
     EventSourceClass: options.EventSourceClass,
+    maxReconnectAttempts: options.maxReconnectAttempts,
+    initialBackoffMs: options.initialBackoffMs,
+    maxBackoffMs: options.maxBackoffMs,
     onSnapshot: (snapshot) => {
       const newRuntime: CanvasRuntime = {};
       for (const nr of snapshot.nodes) {

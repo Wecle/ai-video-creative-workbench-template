@@ -224,6 +224,68 @@ describe("run-stream", () => {
     expect(secondEs.closed).toBe(true);
   });
 
+  it("applies exponential backoff with cap on reconnect and resets on event", async () => {
+    vi.useFakeTimers();
+    try {
+      FakeEventSource.instances = [];
+      let ticketCount = 0;
+      const fetchTicket = vi.fn().mockImplementation(async () => {
+        ticketCount++;
+        return {
+          ticket: `tok-${ticketCount}`,
+          baseUrl: "http://localhost:4000",
+        };
+      });
+
+      const sub = subscribeRunStream({
+        runId,
+        fetchTicket,
+        EventSourceClass: FakeEventSource as unknown as typeof EventSource,
+        initialBackoffMs: 100,
+        maxBackoffMs: 300,
+        maxReconnectAttempts: 5,
+      });
+
+      // 1st connection
+      await vi.advanceTimersByTimeAsync(0);
+      expect(FakeEventSource.instances.length).toBe(1);
+
+      // 1st error -> backoff is min(100 * 2^0, 300) = 100ms
+      FakeEventSource.instances[0]!.emitError();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(FakeEventSource.instances.length).toBe(1);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(FakeEventSource.instances.length).toBe(2);
+
+      // 2nd error -> backoff is min(100 * 2^1, 300) = 200ms
+      FakeEventSource.instances[1]!.emitError();
+      await vi.advanceTimersByTimeAsync(150);
+      expect(FakeEventSource.instances.length).toBe(2);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(FakeEventSource.instances.length).toBe(3);
+
+      // Receiving valid event resets backoff
+      FakeEventSource.instances[2]!.emit("node.status", {
+        type: "node.status",
+        runId,
+        seq: 1,
+        nodeId: "n1",
+        status: "running",
+      });
+
+      // Next error should start from initial backoff again (100ms)
+      FakeEventSource.instances[2]!.emitError();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(FakeEventSource.instances.length).toBe(3);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(FakeEventSource.instances.length).toBe(4);
+
+      sub.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("falls back to polling after 3 reconnect failures", async () => {
     FakeEventSource.instances = [];
     let ticketCount = 0;
@@ -458,6 +520,7 @@ describe("run-tracker", () => {
       onComplete,
       EventSourceClass: FakeEventSource as unknown as typeof EventSource,
       pollingInitialDelayMs: 100,
+      initialBackoffMs: 0,
     });
 
     // Flush promises so fetchTicket rejection is processed and onFallback triggers

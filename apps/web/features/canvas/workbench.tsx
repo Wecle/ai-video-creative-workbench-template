@@ -13,7 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Badge, Button } from "@creative/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -117,6 +117,17 @@ function SaveStatusBadge() {
   );
 }
 
+export function resolveWorkspaceIdForProject(
+  cachedData:
+    | {
+        projects: Array<{ id: string; workspaceId: string }>;
+      }
+    | undefined,
+  projectId: string,
+): string | undefined {
+  return cachedData?.projects.find((p) => p.id === projectId)?.workspaceId;
+}
+
 function Workbench({
   projectId,
   canvasId,
@@ -128,6 +139,7 @@ function Workbench({
 }) {
   const t = useT();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const session = authClient.useSession();
   const persistence = useCanvasPersistence();
   const health = useQuery({
@@ -142,6 +154,11 @@ function Workbench({
     queryFn: api.me,
     enabled: !!session.data,
     retry: false,
+  });
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: api.listProjects,
+    enabled: !!session.data,
   });
   // The middleware only sees the cookie; an expired session is caught here.
   useEffect(() => {
@@ -216,8 +233,18 @@ function Workbench({
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const workspaceId = me.data?.workspaces[0]?.id;
-    if (!workspaceId) return;
+    const cachedProjects =
+      queryClient.getQueryData<{
+        projects: Array<{ id: string; workspaceId: string }>;
+      }>(["projects"]) ?? projectsQuery.data;
+    const workspaceId = resolveWorkspaceIdForProject(cachedProjects, projectId);
+    if (!workspaceId) {
+      setAssetMessage({
+        type: "error",
+        text: t("canvas.assets.uploadFailed"),
+      });
+      return;
+    }
 
     setIsUploading(true);
     setAssetMessage(null);

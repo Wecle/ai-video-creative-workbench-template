@@ -31,6 +31,8 @@ export type RunStreamOptions = RunStreamHandlers & {
   fetchTicket: (runId: string) => Promise<{ ticket: string; baseUrl: string }>;
   EventSourceClass?: EventSourceFactory;
   maxReconnectAttempts?: number;
+  initialBackoffMs?: number;
+  maxBackoffMs?: number;
 };
 
 export type RunStreamController = {
@@ -41,10 +43,14 @@ export function subscribeRunStream(
   options: RunStreamOptions,
 ): RunStreamController {
   const maxReconnectAttempts = options.maxReconnectAttempts ?? 3;
+  const initialBackoffMs =
+    options.initialBackoffMs ?? (process.env.NODE_ENV === "test" ? 20 : 500);
+  const maxBackoffMs = options.maxBackoffMs ?? 8000;
   let activeEs: EventSourceLike | null = null;
   let closed = false;
   let lastSeq = -1;
   let reconnectAttempts = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function connect() {
     if (closed) return;
@@ -54,13 +60,7 @@ export function subscribeRunStream(
       ticketData = await options.fetchTicket(options.runId);
     } catch {
       if (closed) return;
-      reconnectAttempts++;
-      if (reconnectAttempts > maxReconnectAttempts) {
-        close();
-        options.onFallback?.();
-        return;
-      }
-      void connect();
+      reconnect();
       return;
     }
 
@@ -146,8 +146,11 @@ export function subscribeRunStream(
       try {
         const raw =
           typeof evt.data === "string" ? JSON.parse(evt.data) : evt.data;
-        if (typeof raw?.seq === "number" && raw.seq > lastSeq) {
-          reconnect();
+        if (typeof raw?.seq === "number") {
+          reconnectAttempts = 0;
+          if (raw.seq > lastSeq) {
+            reconnect();
+          }
         }
       } catch {
         // Ignore JSON parse errors
@@ -160,6 +163,7 @@ export function subscribeRunStream(
         const raw =
           typeof evt.data === "string" ? JSON.parse(evt.data) : evt.data;
         const status = (raw?.status ?? "succeeded") as CanvasRunStatus;
+        reconnectAttempts = 0;
         options.onDone?.({ type: "done", status });
         close();
       } catch {
@@ -178,13 +182,24 @@ export function subscribeRunStream(
         activeEs.close();
         activeEs = null;
       }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       reconnectAttempts++;
       if (reconnectAttempts > maxReconnectAttempts) {
         close();
         options.onFallback?.();
         return;
       }
-      void connect();
+      const delay = Math.min(
+        initialBackoffMs * Math.pow(2, reconnectAttempts - 1),
+        maxBackoffMs,
+      );
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void connect();
+      }, delay);
     }
 
     es.addEventListener("snapshot", handleSnapshot as EventListener);
@@ -198,6 +213,10 @@ export function subscribeRunStream(
   function close() {
     if (closed) return;
     closed = true;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     if (activeEs) {
       activeEs.close();
       activeEs = null;
