@@ -7,10 +7,10 @@ import {
 import { encodeState, loadCanvasDoc } from "./codec";
 import { assertWriteOrigin, transact, type WriteOrigin } from "./doc";
 import { addNode, connect, updateConfig } from "./ops";
-import type { OpErrorCode, Result } from "./result";
+import { fail, type OpErrorCode, type Result } from "./result";
 
 export type PatchResult =
-  { ok: true } | { ok: false; code: OpErrorCode; index: number };
+  { ok: true } | { ok: false; code: OpErrorCode | string; index?: number };
 
 function executeOp(
   doc: Y.Doc,
@@ -18,8 +18,14 @@ function executeOp(
   op: CanvasPatchOp,
   reg: Registry,
 ): Result<unknown> {
+  if (!op || typeof op !== "object" || !("op" in op)) {
+    return fail("invalid-op");
+  }
   switch (op.op) {
     case "addNode":
+      if (!op.position || typeof op.position !== "object") {
+        return fail("invalid-position");
+      }
       return addNode(
         doc,
         origin,
@@ -47,6 +53,8 @@ function executeOp(
         },
         reg,
       );
+    default:
+      return fail("unknown-op");
   }
 }
 
@@ -64,14 +72,22 @@ export function applyPatch(
 ): PatchResult {
   assertWriteOrigin(origin);
 
+  if (!patch || typeof patch !== "object" || !Array.isArray(patch.ops)) {
+    return { ok: false, code: "invalid-patch" };
+  }
+
   // 1. Dry-run on a cloned document to guarantee all-or-nothing
   const clone = loadCanvasDoc(encodeState(doc));
-  for (let i = 0; i < patch.ops.length; i++) {
-    const op = patch.ops[i]!;
-    const res = executeOp(clone, origin, op, reg);
-    if (!res.ok) {
-      return { ok: false, code: res.code, index: i };
+  try {
+    for (let i = 0; i < patch.ops.length; i++) {
+      const op = patch.ops[i]!;
+      const res = executeOp(clone, origin, op, reg);
+      if (!res.ok) {
+        return { ok: false, code: res.code, index: i };
+      }
     }
+  } finally {
+    clone.destroy();
   }
 
   // 2. Replay all operations inside a single transaction on the real document

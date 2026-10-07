@@ -40,8 +40,13 @@ export type NewNode = {
 };
 
 const MAX_TITLE = 120;
-const isPosition = (p: Position) =>
-  Number.isFinite(p.x) && Number.isFinite(p.y);
+const isPosition = (p: unknown): p is Position =>
+  Boolean(
+    p &&
+    typeof p === "object" &&
+    Number.isFinite((p as Position).x) &&
+    Number.isFinite((p as Position).y),
+  );
 const sameJson = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 

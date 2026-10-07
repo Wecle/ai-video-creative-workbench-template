@@ -9,7 +9,8 @@ import {
   nodesOf,
   readSnapshot,
 } from "../src";
-import { addNode } from "../src/ops";
+import { addNode, connect } from "../src/ops";
+import { testRegistry } from "./helpers";
 
 describe("applyPatch", () => {
   it("applies addNode, updateConfig and connect successfully in a single transaction", () => {
@@ -131,38 +132,77 @@ describe("applyPatch", () => {
     expect(resConfig.ok).toBe(false);
     expect(encodeState(doc)).toEqual(beforeState);
 
-    // 4. Cycle creation
-    // First set up existing-1 -> img1
-    addNode(doc, "user", {
-      id: "img1",
-      type: "image.generate",
-      position: { x: 200, y: 0 },
-      config: { prompt: "", aspectRatio: "16:9" },
-    });
-    const stateBeforeCycle = encodeState(doc);
-
-    const cyclePatch: CanvasPatch = {
-      summary: "Create cycle",
+    // 4. True cycle creation using testRegistry
+    addNode(
+      doc,
+      "user",
+      { id: "trans-1", type: "text.transform", position: { x: 0, y: 0 } },
+      testRegistry,
+    );
+    addNode(
+      doc,
+      "user",
+      { id: "trans-2", type: "text.transform", position: { x: 100, y: 0 } },
+      testRegistry,
+    );
+    connect(
+      doc,
+      "user",
+      {
+        source: "trans-1",
+        sourceHandle: "out",
+        target: "trans-2",
+        targetHandle: "in",
+      },
+      testRegistry,
+    );
+    const beforeTrueCycle = encodeState(doc);
+    const trueCyclePatch: CanvasPatch = {
+      summary: "Create true cycle",
       ops: [
         {
           op: "connect",
-          source: "existing-1",
-          sourceHandle: "text",
-          target: "img1",
-          targetHandle: "prompt",
-        },
-        {
-          op: "connect",
-          source: "img1", // cycle: img1 doesn't have text output, but self-loop or invalid connection
-          sourceHandle: "image",
-          target: "existing-1",
-          targetHandle: "text", // port mismatch or cycle
+          source: "trans-2",
+          sourceHandle: "out",
+          target: "trans-1",
+          targetHandle: "in",
         },
       ],
     };
-    const resCycle = applyPatch(doc, "agent", cyclePatch);
-    expect(resCycle.ok).toBe(false);
-    expect(encodeState(doc)).toEqual(stateBeforeCycle);
+    const resTrueCycle = applyPatch(doc, "agent", trueCyclePatch, testRegistry);
+    expect(resTrueCycle).toEqual({ ok: false, code: "cycle", index: 0 });
+    expect(encodeState(doc)).toEqual(beforeTrueCycle);
+  });
+
+  it("safely rejects malformed patches and ops without throwing", () => {
+    const doc = createCanvasDoc();
+    const beforeState = encodeState(doc);
+
+    // Missing position on addNode
+    const badOpPatch = {
+      summary: "Bad op missing position",
+      ops: [{ op: "addNode", id: "n-bad", type: "text" }],
+    } as unknown as CanvasPatch;
+    const resBadOp = applyPatch(doc, "agent", badOpPatch);
+    expect(resBadOp.ok).toBe(false);
+    expect(resBadOp.code).toBe("invalid-position");
+    expect(resBadOp.index).toBe(0);
+    expect(encodeState(doc)).toEqual(beforeState);
+
+    // Unknown op
+    const unknownOpPatch = {
+      summary: "Unknown op",
+      ops: [{ op: "notAnOp", id: "x" }],
+    } as unknown as CanvasPatch;
+    const resUnknownOp = applyPatch(doc, "agent", unknownOpPatch);
+    expect(resUnknownOp.ok).toBe(false);
+    expect(resUnknownOp.code).toBe("unknown-op");
+    expect(resUnknownOp.index).toBe(0);
+
+    // Invalid patch structure (not an object with ops array)
+    const notPatch = null as unknown as CanvasPatch;
+    const resNull = applyPatch(doc, "agent", notPatch);
+    expect(resNull).toEqual({ ok: false, code: "invalid-patch" });
   });
 
   it("ensures agent origin patch is not undone by createHistory and preserves user undo stack", () => {
