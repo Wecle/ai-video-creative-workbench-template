@@ -40,8 +40,13 @@ export type NewNode = {
 };
 
 const MAX_TITLE = 120;
-const isPosition = (p: Position) =>
-  Number.isFinite(p.x) && Number.isFinite(p.y);
+const isPosition = (p: unknown): p is Position =>
+  Boolean(
+    p &&
+    typeof p === "object" &&
+    Number.isFinite((p as Position).x) &&
+    Number.isFinite((p as Position).y),
+  );
 const sameJson = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
@@ -68,7 +73,7 @@ export function writeNode(
   entry.set("title", node.title);
   entry.set("position", { x: node.position.x, y: node.position.y });
   const config = new Y.Map<unknown>();
-  for (const [key, value] of Object.entries(node.config))
+  for (const [key, value] of Object.entries(node.config ?? {}))
     config.set(key, value);
   entry.set("config", config);
   nodesOf(doc).set(node.id, entry);

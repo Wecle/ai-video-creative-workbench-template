@@ -11,24 +11,55 @@ import type { RealtimeTicketResponse } from "@creative/contracts";
 // Path: /api/v1/realtime/runs/<uuid>/... -> run:<uuid>
 const RUN_RESOURCE_REGEX =
   /^\/api\/v1\/realtime\/runs\/([0-9a-fA-F-]{36})(?:\/|$)/;
+// Path: /api/v1/realtime/agent/runs/<uuid>/... -> agent-run:<uuid>
+const AGENT_RUN_RESOURCE_REGEX =
+  /^\/api\/v1\/realtime\/agent\/runs\/([0-9a-fA-F-]{36})(?:\/|$)/;
 
 export function extractResourceFromPath(pathname: string): string | null {
+  const agentMatch = AGENT_RUN_RESOURCE_REGEX.exec(pathname);
+  if (agentMatch) return `agent-run:${agentMatch[1]}`;
+
   const match = RUN_RESOURCE_REGEX.exec(pathname);
   if (!match) return null;
   return `run:${match[1]}`;
 }
 
+const UUID_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export async function issueRealtimeTicket(options: {
   secret: string;
   userId: string;
-  runId: string;
+  runId?: string;
+  agentRunId?: string;
+  resource?: string;
   baseUrl: string;
 }): Promise<RealtimeTicketResponse> {
+  if (options.runId && options.agentRunId) {
+    throw new Error("Cannot specify both runId and agentRunId");
+  }
+  if (!options.resource && !options.runId && !options.agentRunId) {
+    throw new Error(
+      "Missing resource identifier: runId or agentRunId is required",
+    );
+  }
+  if (options.runId && !UUID_REGEX.test(options.runId)) {
+    throw new Error("Invalid runId format: must be a valid UUID");
+  }
+  if (options.agentRunId && !UUID_REGEX.test(options.agentRunId)) {
+    throw new Error("Invalid agentRunId format: must be a valid UUID");
+  }
+
+  const res =
+    options.resource ??
+    (options.agentRunId
+      ? `agent-run:${options.agentRunId}`
+      : `run:${options.runId}`);
   const jti = randomBytes(16).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
   const secretKey = new TextEncoder().encode(options.secret);
   const ticket = await new SignJWT({
-    res: `run:${options.runId}`,
+    res,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(REALTIME_TICKET_ISSUER)

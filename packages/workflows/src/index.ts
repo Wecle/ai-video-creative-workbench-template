@@ -3,3 +3,4 @@
 export { echoWorkflow } from "./echo";
 export { canvasDagWorkflow } from "./dag";
 export { mediaProbeWorkflow } from "./media-probe";
+export { agentLoopWorkflow } from "./agent-loop";

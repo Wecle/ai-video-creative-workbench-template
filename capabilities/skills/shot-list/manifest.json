@@ -1,0 +1,12 @@
+{
+  "name": "shot-list",
+  "description": "Turn a short story beat into a numbered shot list as text nodes.",
+  "version": "1.0.0",
+  "allowedTools": ["canvas.applyPatch"],
+  "recommendedModels": {
+    "default": {
+      "provider": "mock",
+      "modelId": "scripted-1"
+    }
+  }
+}

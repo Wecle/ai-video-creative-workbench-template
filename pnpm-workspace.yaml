@@ -16,6 +16,8 @@ catalog:
   "@temporalio/testing": ^1.24.0
   "@temporalio/worker": ^1.24.0
   "@temporalio/workflow": ^1.24.0
+  ai: ^7.0.130
+  "@ai-sdk/provider": ^4.0.24
 onlyBuiltDependencies:
   - esbuild
 overrides:

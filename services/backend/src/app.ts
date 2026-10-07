@@ -23,16 +23,19 @@ import { authRoutes } from "./auth/routes";
 import { requireUser, verifyGatewayIdentity } from "./plugins/gateway-trust";
 import type { Redis } from "ioredis";
 import { agentRunRoutes } from "./routes/agent-runs";
+import { agentLoopRoutes } from "./routes/agent-loop";
 import { canvasRoutes } from "./routes/canvases";
 import { canvasRunRoutes } from "./routes/canvas-runs";
 import { projectRoutes } from "./routes/projects";
 import { meRoutes, type Database } from "./routes/me";
 import { realtimeRoutes } from "./routes/realtime";
+import { realtimeAgentRoutes } from "./routes/realtime-agent";
 import { webhookRoutes } from "./routes/webhooks";
 import { assetRoutes } from "./routes/assets";
 import type { ObjectStorage } from "@creative/storage";
-import type { RunEventBus } from "./realtime/run-event-bus";
+import type { AgentEventBus, RunEventBus } from "./realtime/run-event-bus";
 import type { AgentRunService } from "./temporal/agent-runs";
+import type { AgentLoopService } from "./temporal/agent-loops";
 import type { CanvasRunService } from "./temporal/canvas-runs";
 import type { AssetProbeService } from "./temporal/asset-probes";
 
@@ -45,6 +48,29 @@ const defaultCanvasRuns: CanvasRunService = {
   sendCallbackSignal: async () => {
     throw new Error(
       "canvasRuns.sendCallbackSignal must not be called without being provided",
+    );
+  },
+};
+
+const defaultAgentLoops: AgentLoopService = {
+  start: async () => {
+    throw new Error(
+      "agentLoops.start must not be called without being provided",
+    );
+  },
+  signalApproval: async () => {
+    throw new Error(
+      "agentLoops.signalApproval must not be called without being provided",
+    );
+  },
+  describe: async () => {
+    throw new Error(
+      "agentLoops.describe must not be called without being provided",
+    );
+  },
+  ping: async () => {
+    throw new Error(
+      "agentLoops.ping must not be called without being provided",
     );
   },
 };
@@ -67,6 +93,8 @@ export type BackendOptions = {
   webOrigin: string;
   /** Starts and queries agent runs (Temporal in production, a fake in tests). */
   agentRuns: AgentRunService;
+  /** Starts agent loops and handles approvals. */
+  agentLoops?: AgentLoopService;
   /** Starts canvas runs and signals workflows. */
   canvasRuns?: CanvasRunService;
   /** Starts media probe workflows. */
@@ -81,6 +109,8 @@ export type BackendOptions = {
   allowMockMode?: boolean;
   /** Redis pub/sub bus for realtime event streaming. */
   bus?: RunEventBus;
+  /** Redis pub/sub bus for agent loop realtime event streaming. */
+  agentBus?: AgentEventBus;
   /** Redis instance for reading sequence counters and state. */
   redis?: Redis;
   /** Ping interval for realtime SSE streams in ms (default: 15_000). */
@@ -99,6 +129,7 @@ export function buildApp({
   internalSecret,
   webOrigin,
   agentRuns,
+  agentLoops = defaultAgentLoops,
   canvasRuns = defaultCanvasRuns,
   assetProbes = defaultAssetProbes,
   providerRegistry = defaultProviderRegistry,
@@ -106,6 +137,7 @@ export function buildApp({
   production = false,
   allowMockMode = !production,
   bus,
+  agentBus,
   redis,
   pingIntervalMs,
   storage,
@@ -121,7 +153,7 @@ export function buildApp({
   // First hook: nothing runs for a request the gateway did not sign.
   app.addHook("onRequest", verifyGatewayIdentity(internalSecret));
   app.addHook("onClose", async () => {
-    await bus?.close();
+    await Promise.all([bus?.close(), agentBus?.close()]);
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -174,6 +206,12 @@ export function buildApp({
         redis,
         pingIntervalMs,
       });
+      await realtimeAgentRoutes(realtimeScope, {
+        db,
+        bus: agentBus,
+        redis,
+        pingIntervalMs,
+      });
     });
 
     // Business API: a valid gateway signature that vouches for a user is required.
@@ -181,6 +219,7 @@ export function buildApp({
       v1.addHook("onRequest", requireUser);
       await meRoutes(v1, db);
       await agentRunRoutes(v1, agentRuns);
+      await agentLoopRoutes(v1, { db, agentLoops });
       await projectRoutes(v1, db);
       await canvasRoutes(v1, db, registry);
       await canvasRunRoutes(v1, db, canvasRuns, allowMockMode);

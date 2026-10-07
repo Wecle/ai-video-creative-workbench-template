@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@creative/agent-core": "workspace:*",
+    "@creative/canvas-doc": "workspace:*",
+    "@creative/contracts": "workspace:*",
+    "@creative/database": "workspace:*",
     "@creative/observability": "workspace:*",
     "@creative/workflows": "workspace:*",
     "@opentelemetry/api": "^1.9.0",
@@ -19,6 +22,10 @@
     "@opentelemetry/sdk-node": "^0.222.0",
     "@temporalio/activity": "catalog:",
     "@temporalio/worker": "catalog:",
+    "ai": "catalog:",
+    "drizzle-orm": "^0.45.3",
+    "ioredis": "catalog:",
+    "postgres": "^3.4.7",
     "zod": "catalog:"
   },
   "devDependencies": {

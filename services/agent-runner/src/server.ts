@@ -1,16 +1,63 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { NativeConnection, Worker } from "@temporalio/worker";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { schema } from "@creative/database";
+import { Redis } from "ioredis";
 import { startTelemetry } from "@creative/observability";
 import { AGENT_TASK_QUEUE } from "@creative/workflows/constants";
+import { createModelResolver, loadSkills } from "@creative/agent-core/runtime";
 import { createActivities } from "./activities";
+import { createAgentLoopActivities } from "./agent-loop-activities";
+import { createAgentEventPublisher } from "./events";
 import { loadConfig } from "./config";
 import { workflowSource } from "./workflow-source";
 
-/** Compose healthcheck: present once connected and about to poll. It does not track later disconnects. */
 const READY_FILE = "/tmp/agent-runner.ready";
 
 const config = loadConfig();
 const telemetry = startTelemetry("creative-agent-runner");
+
+// Validate skills directory and required skills at startup (S10)
+try {
+  const loaded = loadSkills(config.agentSkillsDir, [
+    "canvas.applyPatch",
+    "skill.load",
+  ]);
+  if (!loaded.has("shot-list")) {
+    throw new Error(
+      `Required skill 'shot-list' missing from ${config.agentSkillsDir}`,
+    );
+  }
+} catch (err) {
+  console.error(`Skills validation failed for ${config.agentSkillsDir}:`, err);
+  process.exit(1);
+}
+
+const sql = postgres(config.databaseUrl, { max: 5 });
+const db = drizzle(sql, { schema });
+
+const redis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+
+const publisher = createAgentEventPublisher(redis);
+const modelResolver = createModelResolver({
+  mockChunkDelayMs: config.agentMockChunkDelayMs,
+});
+
+const agentLoopActivities = createAgentLoopActivities({
+  db,
+  publisher,
+  skillsDir: config.agentSkillsDir,
+  modelResolver,
+  agentModel: config.agentModel,
+});
+
 let connection: NativeConnection | undefined;
 try {
   connection = await NativeConnection.connect({
@@ -20,13 +67,14 @@ try {
     connection,
     namespace: config.temporalNamespace,
     taskQueue: AGENT_TASK_QUEUE,
-    activities: { ...createActivities() },
-    // Must stay below stop_grace_period in the compose file.
+    activities: {
+      ...createActivities(),
+      ...agentLoopActivities,
+    },
     shutdownGraceTime: "10s",
     ...workflowSource(),
   });
   writeFileSync(READY_FILE, "ready");
-  // run() handles SIGINT/SIGTERM/SIGQUIT/SIGUSR2 itself and returns after draining.
   await worker.run();
 } catch (error) {
   console.error("agent-runner failed", error);
@@ -34,5 +82,7 @@ try {
 } finally {
   rmSync(READY_FILE, { force: true });
   await connection?.close();
+  await redis?.quit();
+  await sql.end({ timeout: 5 }).catch(() => undefined);
   await telemetry.shutdown();
 }

@@ -14,7 +14,10 @@ export type OpErrorCode =
   | "invalid-config"
   | "invalid-title"
   | "invalid-position"
-  | "unknown-edge";
+  | "invalid-op"
+  | "unknown-op"
+  | "unknown-edge"
+  | "invalid-patch";
 
 /** Operations never throw for business reasons; they return a code the UI can localize. */
 export type Result<T = void, C extends string = OpErrorCode> =

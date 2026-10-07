@@ -192,3 +192,50 @@ export const assets = pgTable(
   },
   (table) => [index("assets_workspace_id_idx").on(table.workspaceId)],
 );
+
+export const agent_runs = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    canvasId: uuid("canvas_id")
+      .notNull()
+      .references(() => canvases.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    profileId: text("profile_id").notNull(),
+    prompt: text("prompt").notNull(),
+    routeHints: jsonb("route_hints"),
+    canvasVersion: integer("canvas_version").notNull(),
+    canvasSnapshot: jsonb("canvas_snapshot").notNull(),
+    status: text("status").default("running").notNull(),
+    outcome: text("outcome"),
+    state: jsonb("state").default({ steps: [], proposals: [] }).notNull(),
+    stateVersion: integer("state_version").default(0).notNull(),
+    workflowId: text("workflow_id").notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("agent_runs_workspace_id_idx").on(table.workspaceId),
+    index("agent_runs_project_id_idx").on(table.projectId),
+    index("agent_runs_canvas_id_idx").on(table.canvasId),
+    index("agent_runs_created_by_idx").on(table.createdBy),
+    index("agent_runs_status_idx").on(table.status),
+  ],
+);

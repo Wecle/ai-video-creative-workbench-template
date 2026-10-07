@@ -31,6 +31,7 @@ async function boot(
     redis,
     ticketSecret: TICKET_SECRET,
     webOrigin: "http://localhost:3000",
+    rateLimitNamespace: `gw:rl:test:${randomUUID()}:`,
     ...options,
   });
   return { upstream, gateway, redis };
@@ -74,6 +75,42 @@ describe("gateway realtime tickets", () => {
       },
     );
     expect(badBody.status).toBe(400);
+
+    // 400 with missing IDs
+    const missingIds = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(missingIds.status).toBe(400);
+
+    // 400 with both IDs
+    const bothIds = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId,
+          agentRunId: "a0000000-0000-4000-8000-000000000001",
+        }),
+      },
+    );
+    expect(bothIds.status).toBe(400);
+
+    // 400 with non-UUID agentRunId
+    const badAgentRunId = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentRunId: "not-a-uuid" }),
+      },
+    );
+    expect(badAgentRunId.status).toBe(400);
 
     // 200 with valid body
     const success = await authedFetch(
@@ -271,6 +308,82 @@ describe("gateway realtime tickets", () => {
     ).toBe(403);
   });
 
+  it("issues tickets for agentRunId and enforces cross-resource isolation", async () => {
+    const { upstream, gateway } = await boot();
+    const agentRunId = "a0000000-0000-4000-8000-000000000001";
+    const otherAgentRunId = "a0000000-0000-4000-8000-000000000002";
+
+    // Issue agent ticket
+    const agentIssueRes = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentRunId }),
+      },
+    );
+    expect(agentIssueRes.status).toBe(200);
+    const { ticket: agentTicket } = (await agentIssueRes.json()) as {
+      ticket: string;
+    };
+
+    // Issue standard run ticket
+    const runIssueRes = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId }),
+      },
+    );
+    expect(runIssueRes.status).toBe(200);
+    const { ticket: runTicket } = (await runIssueRes.json()) as {
+      ticket: string;
+    };
+
+    // 1. Run ticket cannot open agent stream (403)
+    const runOnAgentRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${runTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(runOnAgentRes.status).toBe(403);
+
+    // 2. Agent ticket cannot open normal run stream (403)
+    const agentOnRunRes = await fetch(
+      `${gateway.url}/api/v1/realtime/runs/${runId}/events?ticket=${agentTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(agentOnRunRes.status).toBe(403);
+
+    // 3. Agent ticket cannot open another agent run stream (403)
+    const agentOnOtherRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${otherAgentRunId}/events?ticket=${agentTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(agentOnOtherRes.status).toBe(403);
+
+    // 4. Since above failed attempts didn't match resource, ticket was not consumed!
+    // Now agent ticket accesses its own agent stream successfully (200)
+    const goodAgentRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${agentTicket}&lastEventId=5`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(goodAgentRes.status).toBe(200);
+    const last = upstream.last();
+    expect(last.url).toBe(
+      `/api/v1/realtime/agent/runs/${agentRunId}/events?lastEventId=5`,
+    );
+    expect(last.headers["x-internal-auth-type"]).toBe("ticket");
+    expect(last.headers["x-internal-user-id"]).toBe(TEST_USER_ID);
+
+    // 5. Subsequent attempt with same agent ticket is rejected (401 single-use)
+    const reuseAgentRes = await fetch(
+      `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${agentTicket}`,
+      { headers: { Origin: "http://localhost:3000" } },
+    );
+    expect(reuseAgentRes.status).toBe(401);
+  });
+
   it("does not accept ticket in protected routes like /api/v1/me, but Bearer still works in realtime", async () => {
     const { gateway } = await boot();
     const issueRes = await authedFetch(
@@ -434,5 +547,69 @@ describe("gateway realtime tickets", () => {
 
     expect(logBuffer).toContain("ticket=[redacted]");
     expect(logBuffer).not.toContain(secretTicket);
+  });
+
+  it("enforces Origin whitelist on agent realtime endpoint", async () => {
+    const { gateway } = await boot();
+    const agentRunId = "a0000000-0000-4000-8000-000000000001";
+    const issueRes = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentRunId }),
+      },
+    );
+    const { ticket } = (await issueRes.json()) as { ticket: string };
+
+    const url = `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${ticket}`;
+
+    // Forbidden Origin -> 403
+    const badOrigin = await fetch(url, {
+      headers: { Origin: "http://malicious.test" },
+    });
+    expect(badOrigin.status).toBe(403);
+
+    // Valid Origin succeeds (200)
+    const goodOrigin = await fetch(url, {
+      headers: { Origin: "http://localhost:3000" },
+    });
+    expect(goodOrigin.status).toBe(200);
+    expect(goodOrigin.headers.get("access-control-allow-origin")).toBe(
+      "http://localhost:3000",
+    );
+  });
+
+  it("issueRealtimeTicket function validates arguments strictly", async () => {
+    const { issueRealtimeTicket } = await import("../src/ticket");
+    // Missing both IDs
+    await expect(
+      issueRealtimeTicket({
+        secret: TICKET_SECRET,
+        userId: TEST_USER_ID,
+        baseUrl: "http://localhost:4000",
+      }),
+    ).rejects.toThrow(/Missing resource identifier/);
+
+    // Both IDs specified
+    await expect(
+      issueRealtimeTicket({
+        secret: TICKET_SECRET,
+        userId: TEST_USER_ID,
+        runId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+        agentRunId: "a0000000-0000-4000-8000-000000000001",
+        baseUrl: "http://localhost:4000",
+      }),
+    ).rejects.toThrow(/Cannot specify both/);
+
+    // Invalid agentRunId
+    await expect(
+      issueRealtimeTicket({
+        secret: TICKET_SECRET,
+        userId: TEST_USER_ID,
+        agentRunId: "invalid-uuid",
+        baseUrl: "http://localhost:4000",
+      }),
+    ).rejects.toThrow(/Invalid agentRunId format/);
   });
 });

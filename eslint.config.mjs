@@ -8,6 +8,17 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = fileURLToPath(new URL("./apps/web/", import.meta.url));
 
+const agentCorePureFiles = [
+  "packages/agent-core/src/pure.ts",
+  "packages/agent-core/src/policy/**/*.ts",
+  "packages/agent-core/src/loop/**/*.ts",
+  "packages/agent-core/src/context/**/*.ts",
+  "packages/agent-core/src/router/**/*.ts",
+  "packages/agent-core/src/profiles/types.ts",
+  "packages/agent-core/src/profiles/general.ts",
+  "packages/agent-core/src/tools/names.ts",
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -45,6 +56,11 @@ export default tseslint.config(
               message:
                 "Import a client subpath (better-auth/react, better-auth/client/plugins, better-auth/cookies); the root entry is server-side.",
             },
+            {
+              name: "ai",
+              message:
+                "Direct 'ai' imports are not allowed in web frontend. Use API client or backend routes.",
+            },
           ],
           patterns: [
             "@creative/database",
@@ -65,6 +81,9 @@ export default tseslint.config(
             "@creative/storage/*",
             "@aws-sdk/*",
             "ioredis",
+            "@creative/agent-core",
+            "@creative/agent-core/*",
+            "@ai-sdk/*",
           ],
         },
       ],
@@ -72,7 +91,7 @@ export default tseslint.config(
   },
   {
     // Workflow code runs in Temporal's deterministic sandbox: no IO, no clocks, no Node APIs.
-    // Allow only @temporalio/workflow and relative imports (type imports are free).
+    // Allow only @temporalio/workflow, @creative/agent-core/pure and relative imports (type imports are free).
     files: ["packages/workflows/src/**/*.ts"],
     rules: {
       "no-restricted-imports": "off",
@@ -81,10 +100,11 @@ export default tseslint.config(
         {
           patterns: [
             {
-              regex: "^(?!@temporalio/workflow$|\\.{1,2}(/|$))",
+              regex:
+                "^(?!@temporalio/workflow$|@creative/agent-core/pure$|\\.{1,2}(/|$))",
               allowTypeImports: true,
               message:
-                "Workflow code may only import @temporalio/workflow and relative modules. Put IO in activities (services/agent-runner).",
+                "Workflow code may only import @temporalio/workflow, @creative/agent-core/pure and relative modules. Put IO in activities (services/agent-runner).",
             },
           ],
         },
@@ -97,6 +117,61 @@ export default tseslint.config(
             message: "Not available in the deterministic workflow sandbox.",
           }),
         ),
+      ],
+    },
+  },
+  {
+    // Agent-core pure code is deterministic and free of external dependencies.
+    // Allow only relative imports (type imports are free).
+    files: agentCorePureFiles,
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^(?!\\.{1,2}(/|$))",
+              allowTypeImports: true,
+              message:
+                "Agent-core pure code may only use relative imports and zero external runtime dependencies.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-globals": [
+        "error",
+        ...["fetch", "process", "require", "XMLHttpRequest", "WebSocket"].map(
+          (name) => ({
+            name,
+            message: "Not available in deterministic agent-core pure modules.",
+          }),
+        ),
+      ],
+    },
+  },
+  {
+    // Restrict AI SDK and node:* imports to runtime modules in agent-core.
+    files: ["packages/agent-core/src/**/*.ts"],
+    ignores: [
+      "packages/agent-core/src/runtime/**",
+      "packages/agent-core/src/skills/runtime/**",
+      "packages/agent-core/src/runtime.ts",
+      ...agentCorePureFiles,
+    ],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex:
+                "^(ai|@ai-sdk/.*|node:.*|assert|async_hooks|buffer|child_process|cluster|console|constants|crypto|dgram|dns|domain|events|fs|fs/promises|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|timers|tls|tty|url|util|v8|vm|wasi|worker_threads|zlib)(/.*)?$",
+              allowTypeImports: true,
+              message:
+                "AI SDK and Node APIs are only allowed in runtime modules (@creative/agent-core/runtime).",
+            },
+          ],
+        },
       ],
     },
   },

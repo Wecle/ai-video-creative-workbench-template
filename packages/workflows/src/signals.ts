@@ -10,3 +10,11 @@ export type ProviderCallbackPayload = {
 
 export const providerCallbackSignal =
   defineSignal<[ProviderCallbackPayload]>("providerCallback");
+
+export type AgentApprovalPayload = {
+  toolCallId: string;
+  decision: "approve" | "reject";
+};
+
+export const agentApprovalSignal =
+  defineSignal<[AgentApprovalPayload]>("agentApproval");

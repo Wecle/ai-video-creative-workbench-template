@@ -16,8 +16,9 @@
 ## API
 
 - 操作：`addNode`、`moveNodes`（单事务）、`renameNode`、`updateConfig`、`removeNodes`（同事务删关联边）、`connect`、`removeEdges`。第二个参数是必传的 origin：`"user"`（可撤销）或 `"agent"`（不会被用户撤销）；缺失或其他值抛 `TypeError`。操作返回 `Result`（带错误码），不为业务错误抛异常。
+- 补丁应用：`applyPatch(doc, origin, patch, registry?)`：原子应用补丁，先在克隆文档上 dry-run 验证每个操作（全有或全无），全部成功后在真实文档上以单个事务提交；任一失败返回 `{ok: false, code, index}` 且真实文档字节级不变。
 - 连接校验：`validateConnection(graph, registry, connection)`，错误码 `unknown-node`、`unknown-port`、`port-type-mismatch`、`self-loop`、`duplicate-edge`、`cycle`；UI 的 `isValidConnection` 与 `connect` 用同一个函数。
-- 快照：`readSnapshot(doc)`（按 id 排序，稳定）、`validateSnapshot(snapshot, registry)`（返回 `{code, path}[]`，不回显 config）、`inspectState(bytes, registry)`（对不可信的二进制状态给出结论，从不因坏输入抛异常；服务端保存前使用）。
+- 快照：`readSnapshot(doc)`（按 id 排序，稳定）、`validateSnapshot(snapshot, registry)`（返回 `{code, path}[]`，不回显 config）、`docFromSnapshot(snapshot)`（从已校验的快照构造文档）、`inspectState(bytes, registry)`（对不可信的二进制状态给出结论，从不因坏输入抛异常；服务端保存前使用）。
 - `repairDocument(doc)`：删除悬挂边、端口非法的边和成环的边（按 edgeId 字典序，后者删，各副本结果一致），origin 为 `repair`，不被撤销栈跟踪。`createHistory` 在每次撤销/重做后调用它；持久化在保存前调用它。代价：被修复删除的边，redo 不会恢复。
 - 历史：`createHistory(doc, { captureTimeout })` 只跟踪 `user` origin；500 ms 内的连续编辑合并为一步。
 - 编码：`createCanvasDoc`（服务端创建空画布）、`encodeState`（完整状态，不是增量）、`loadCanvasDoc`（更高的 `schemaVersion` 抛 `UnsupportedSchemaError`，坏数据抛 `InvalidStateError`，旧版本走 `MIGRATIONS`）、`toBase64`/`fromBase64`、`isPersistableOrigin`。

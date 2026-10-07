@@ -201,7 +201,8 @@ describe("backend realtime SSE streaming", () => {
     });
 
     // Give time for initial subscription & snapshot
-    await new Promise((r) => setTimeout(r, 100));
+    await vi.waitFor(() => expect(bus.listenerCount(runId)).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 50));
 
     // Publish incremental node status event
     await redis.publish(
@@ -299,6 +300,9 @@ describe("backend realtime SSE streaming", () => {
       headers,
     });
 
+    await vi.waitFor(() =>
+      expect(bus.listenerCount(runRow.id)).toBeGreaterThan(0),
+    );
     await new Promise((r) => setTimeout(r, 100));
 
     // app.close() must complete without hanging
@@ -373,13 +377,12 @@ describe("backend realtime SSE streaming", () => {
     // Verify NUMSUB becomes 0
     await vi.waitFor(
       async () => {
+        expect(bus.listenerCount(runRow.id)).toBe(0);
         const resAfter = await redis.pubsub("NUMSUB", channel);
         expect(Number(resAfter[1])).toBe(0);
       },
       { timeout: 2000, interval: 50 },
     );
-
-    expect(bus.listenerCount(runRow.id)).toBe(0);
 
     await close();
     redis.disconnect();
@@ -435,9 +438,14 @@ describe("backend realtime SSE streaming", () => {
     expect(res.statusCode).toBe(500);
 
     // Must not leak bus listener or redis subscription
-    expect(bus.listenerCount(runRow.id)).toBe(0);
-    const resSub = await redis.pubsub("NUMSUB", channel);
-    expect(Number(resSub[1])).toBe(0);
+    await vi.waitFor(
+      async () => {
+        expect(bus.listenerCount(runRow.id)).toBe(0);
+        const resSub = await redis.pubsub("NUMSUB", channel);
+        expect(Number(resSub[1])).toBe(0);
+      },
+      { timeout: 2000, interval: 50 },
+    );
 
     await close();
     redis.disconnect();
@@ -488,7 +496,7 @@ describe("backend realtime SSE streaming", () => {
     expect((receivedEvents[0] as { seq: number }).seq).toBe(1);
 
     await unsubscribe2();
-    expect(bus.listenerCount(runId)).toBe(0);
+    await vi.waitFor(() => expect(bus.listenerCount(runId)).toBe(0));
 
     await bus.close();
     pubRedis.disconnect();

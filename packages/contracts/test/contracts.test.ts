@@ -181,9 +181,19 @@ describe("contracts", () => {
 
   it("validates realtime ticket request and response", () => {
     const runId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const agentRunId = "1f8fad5b-d9cb-469f-a165-70867728950f";
     expect(realtimeTicketRequestSchema.parse({ runId })).toEqual({ runId });
+    expect(realtimeTicketRequestSchema.parse({ agentRunId })).toEqual({
+      agentRunId,
+    });
     expect(
       realtimeTicketRequestSchema.safeParse({ runId: "invalid" }).success,
+    ).toBe(false);
+    expect(
+      realtimeTicketRequestSchema.safeParse({ agentRunId: "invalid" }).success,
+    ).toBe(false);
+    expect(
+      realtimeTicketRequestSchema.safeParse({ runId, agentRunId }).success,
     ).toBe(false);
 
     const ticketResp = {

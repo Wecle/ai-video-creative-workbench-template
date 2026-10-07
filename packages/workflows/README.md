@@ -3,16 +3,18 @@
 Temporal workflow definitions: **deterministic code and contracts only**. Activity implementations live in
 `services/agent-runner` (they need IO); this package is bundled by webpack into Temporal's sandbox.
 
-| File                 | Role                                                                                                 |
-| -------------------- | ---------------------------------------------------------------------------------------------------- |
-| `src/index.ts`       | Worker `workflowsPath` entry. Every function exported here is registered as a workflow.              |
-| `src/echo.ts`        | `echoWorkflow`: calls the `runEcho` activity (30 s timeout, at most 3 attempts).                     |
-| `src/dag.ts`         | `canvasDagWorkflow`: executes canvas node graph with topological order and callback/polling support. |
-| `src/media-probe.ts` | `mediaProbeWorkflow`: coordinates `loadAsset`, `media.probe` (Python), and `saveAssetMetadata`.      |
-| `src/activities.ts`  | Types only: `AgentActivities`, `OrchestratorActivities`, `MediaActivities`, etc.                     |
-| `src/constants.ts`   | Task queues, workflow types, workflow-id helpers, pinned test CLI version.                           |
+| File                 | Role                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`       | Worker `workflowsPath` entry. Every function exported here is registered as a workflow.                           |
+| `src/echo.ts`        | `echoWorkflow`: calls the `runEcho` activity (30 s timeout, at most 3 attempts).                                  |
+| `src/dag.ts`         | `canvasDagWorkflow`: executes canvas node graph with topological order and callback/polling support.              |
+| `src/agent-loop.ts`  | `agentLoopWorkflow`: runs iterative LLM loop with tool validation, human-in-the-loop approval, and checkpointing. |
+| `src/media-probe.ts` | `mediaProbeWorkflow`: coordinates `loadAsset`, `media.probe` (Python), and `saveAssetMetadata`.                   |
+| `src/activities.ts`  | Types only: `AgentActivities`, `AgentLoopActivities`, `OrchestratorActivities`, `MediaActivities`, etc.           |
+| `src/constants.ts`   | Task queues, workflow types, workflow-id helpers, pinned test CLI version.                                        |
+| `src/signals.ts`     | Signal definitions: `agentApprovalSignal`, `providerCallbackSignal`.                                              |
 
-Exports: `.` (workflows), `./constants`, `./activities`, `./dag`, `./signals`, `./media-probe`.
+Exports: `.` (workflows), `./constants`, `./activities`, `./dag`, `./agent-loop`, `./signals`, `./media-probe`.
 
 ## Determinism boundary (three layers)
 

@@ -16,6 +16,7 @@ export default defineConfig({
     "@creative/storage",
     // Constants and types only (never the workflow entry): see packages/workflows/README.md.
     "@creative/workflows",
+    "@creative/agent-core",
   ],
   external: [
     "@opentelemetry/api",

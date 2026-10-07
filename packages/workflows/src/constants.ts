@@ -28,6 +28,30 @@ export function agentRunWorkflowId(userId: string, runId: string): string {
   return `agent-run:${userId}:${runId}`;
 }
 
+/** Agent loop workflow type name. */
+export const AGENT_LOOP_WORKFLOW_TYPE = "agentLoopWorkflow";
+
+/** Execution timeout for agent loop workflow. */
+export const AGENT_LOOP_EXECUTION_TIMEOUT = "1 hour";
+
+/**
+ * Agent loop workflow ID derived from userId and agentRunId.
+ */
+export function agentLoopWorkflowId(
+  userId: string,
+  agentRunId: string,
+): string {
+  if (
+    !userId ||
+    !agentRunId ||
+    userId.includes(":") ||
+    agentRunId.includes(":")
+  ) {
+    throw new Error("Invalid agent loop run identifiers");
+  }
+  return `agent-loop:${userId}:${agentRunId}`;
+}
+
 /** Task queue served by `services/orchestrator-worker`. */
 export const ORCHESTRATOR_TASK_QUEUE = "orchestrator";
 
