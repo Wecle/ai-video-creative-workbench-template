@@ -10,7 +10,7 @@ const orchestrator = proxyActivities<OrchestratorAssetActivities>({
   startToCloseTimeout: "1 minute",
   retry: {
     maximumAttempts: 3,
-    nonRetryableErrorTypes: ["NonRetryableError", "ApplicationError"],
+    nonRetryableErrorTypes: ["AssetNotFound", "AssetNotReady"],
   },
 });
 

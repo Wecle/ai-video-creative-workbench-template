@@ -181,4 +181,38 @@ describe("mediaProbeWorkflow", () => {
       await mediaWorkerPromise;
     }
   }, 30_000);
+
+  it("does not retry when orchestrator.loadAsset throws non-retryable AssetNotFound error", async () => {
+    let loadAttempts = 0;
+
+    const orchestratorActivities: OrchestratorAssetActivities = {
+      async loadAsset(): Promise<LoadAssetResult> {
+        loadAttempts++;
+        throw ApplicationFailure.nonRetryable(
+          "Asset not found: missing",
+          "AssetNotFound",
+        );
+      },
+      async saveAssetMetadata(): Promise<void> {},
+    };
+
+    const orchestratorWorker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue: ORCHESTRATOR_TASK_QUEUE,
+      workflowBundle,
+      activities: { ...orchestratorActivities },
+    });
+
+    await expect(
+      orchestratorWorker.runUntil(
+        env.client.workflow.execute(MEDIA_PROBE_WORKFLOW_TYPE, {
+          taskQueue: ORCHESTRATOR_TASK_QUEUE,
+          workflowId: assetProbeWorkflowId("missing"),
+          args: [{ assetId: "missing" }],
+        }),
+      ),
+    ).rejects.toThrow();
+
+    expect(loadAttempts).toBe(1);
+  }, 30_000);
 });
