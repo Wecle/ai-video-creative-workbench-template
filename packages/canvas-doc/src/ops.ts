@@ -68,7 +68,7 @@ export function writeNode(
   entry.set("title", node.title);
   entry.set("position", { x: node.position.x, y: node.position.y });
   const config = new Y.Map<unknown>();
-  for (const [key, value] of Object.entries(node.config))
+  for (const [key, value] of Object.entries(node.config ?? {}))
     config.set(key, value);
   entry.set("config", config);
   nodesOf(doc).set(node.id, entry);

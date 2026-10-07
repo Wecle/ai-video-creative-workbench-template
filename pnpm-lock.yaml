@@ -390,6 +390,15 @@ importers:
       '@creative/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@creative/canvas-doc':
+        specifier: workspace:*
+        version: link:../../packages/canvas-doc
+      '@creative/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@creative/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@creative/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -411,6 +420,18 @@ importers:
       '@temporalio/worker':
         specifier: 'catalog:'
         version: 1.24.0(esbuild@0.28.2)(lightningcss@1.32.0)(postcss@8.5.28)
+      ai:
+        specifier: 'catalog:'
+        version: 7.0.130(zod@4.6.5)
+      drizzle-orm:
+        specifier: ^0.45.3
+        version: 0.45.3(@opentelemetry/api@1.9.1)(kysely@0.29.6)(postgres@3.4.9)
+      ioredis:
+        specifier: 'catalog:'
+        version: 5.11.1
+      postgres:
+        specifier: ^3.4.7
+        version: 3.4.9
       zod:
         specifier: 'catalog:'
         version: 4.6.5
