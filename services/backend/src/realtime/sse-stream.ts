@@ -18,7 +18,7 @@ export interface OpenRunStreamOptions<
   runId: string;
   seqKey: string;
   loadSnapshot: (seq0: number) => Promise<{
-    snapshot: TSnapshot;
+    snapshot: TSnapshot | null;
     initialTerminalStatus?: string | null;
   }>;
   isTerminalEvent?: (event: TEvent) => string | null | undefined;

@@ -2,34 +2,29 @@ import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import { z } from "zod";
-import {
-  type NodeRunStatus,
-  type RunEvent,
-  runEventsSeqKey,
-} from "@creative/contracts";
+import { type AgentEvent, agentEventsSeqKey } from "@creative/contracts";
 import { schema } from "@creative/database";
 import { findAccessibleCanvas } from "../canvas/access";
 import { requireUserOrTicket } from "../plugins/gateway-trust";
-import type { RunEventBus } from "../realtime/run-event-bus";
+import type { AgentEventBus } from "../realtime/run-event-bus";
 import { openRunStream } from "../realtime/sse-stream";
+import { formatAgentLoopRun } from "./agent-loop";
 import type { Database } from "./me";
-
-const { canvases, runs, node_runs } = schema;
-
-export type RealtimeRoutesOptions = {
-  db: Database;
-  bus?: RunEventBus;
-  redis?: Redis;
-  pingIntervalMs?: number;
-};
 
 const paramsSchema = z.object({
   runId: z.string().uuid(),
 });
 
-export async function realtimeRoutes(
+export type RealtimeAgentRoutesOptions = {
+  db: Database;
+  bus?: AgentEventBus;
+  redis?: Redis;
+  pingIntervalMs?: number;
+};
+
+export async function realtimeAgentRoutes(
   app: FastifyInstance,
-  options: RealtimeRoutesOptions,
+  options: RealtimeAgentRoutesOptions,
 ) {
   const { db, bus, redis, pingIntervalMs = 15_000 } = options;
   const activeConnections = new Set<() => void>();
@@ -42,7 +37,7 @@ export async function realtimeRoutes(
   });
 
   app.get(
-    "/api/v1/realtime/runs/:runId/events",
+    "/api/v1/realtime/agent/runs/:runId/events",
     {
       onRequest: [requireUserOrTicket],
     },
@@ -54,20 +49,13 @@ export async function realtimeRoutes(
       const { runId } = parsedParams.data;
       const userId = request.identity.userId!;
 
-      // 1. Verify existence and canvas access
       const [runRow] = await db
-        .select({
-          id: runs.id,
-          canvasId: runs.canvasId,
-          projectId: runs.projectId,
-          status: runs.status,
-          error: runs.error,
-        })
-        .from(runs)
-        .where(eq(runs.id, runId))
+        .select()
+        .from(schema.agent_runs)
+        .where(eq(schema.agent_runs.id, runId))
         .limit(1);
 
-      if (!runRow) {
+      if (!runRow || runRow.createdBy !== userId) {
         return reply.code(404).send({ error: "Run not found" });
       }
 
@@ -76,7 +64,7 @@ export async function realtimeRoutes(
         userId,
         runRow.projectId,
         runRow.canvasId,
-        { id: canvases.id },
+        { id: schema.canvases.id },
       );
 
       if (!canvas) {
@@ -87,19 +75,17 @@ export async function realtimeRoutes(
         return reply.code(503).send({ error: "Realtime service unavailable" });
       }
 
-      await openRunStream<RunEvent, unknown>(request, reply, {
+      await openRunStream<AgentEvent, unknown>(request, reply, {
         bus,
         redis,
         runId,
-        seqKey: runEventsSeqKey(runId),
+        seqKey: agentEventsSeqKey(runId),
         pingIntervalMs,
         activeConnections,
         isTerminalEvent: (evt) => {
           if (
-            evt.type === "run.status" &&
-            (evt.status === "succeeded" ||
-              evt.status === "failed" ||
-              evt.status === "cancelled")
+            evt.type === "agent.run.status" &&
+            (evt.status === "completed" || evt.status === "failed")
           ) {
             return evt.status;
           }
@@ -107,9 +93,9 @@ export async function realtimeRoutes(
         },
         loadSnapshot: async (seq0) => {
           const [latestRun] = await db
-            .select({ status: runs.status, error: runs.error })
-            .from(runs)
-            .where(eq(runs.id, runId))
+            .select()
+            .from(schema.agent_runs)
+            .where(eq(schema.agent_runs.id, runId))
             .limit(1);
 
           if (request.raw.destroyed) {
@@ -119,18 +105,10 @@ export async function realtimeRoutes(
             };
           }
 
-          const nodeRunRows = await db
-            .select({
-              nodeId: node_runs.nodeId,
-              status: node_runs.status,
-              error: node_runs.error,
-            })
-            .from(node_runs)
-            .where(eq(node_runs.runId, runId));
-
-          const initialStatus = latestRun?.status ?? runRow.status;
+          const currentRow = latestRun ?? runRow;
+          const initialStatus = currentRow.status;
           const isTerminal =
-            initialStatus === "succeeded" ||
+            initialStatus === "completed" ||
             initialStatus === "failed" ||
             initialStatus === "cancelled";
 
@@ -139,13 +117,7 @@ export async function realtimeRoutes(
               type: "snapshot",
               runId,
               seq: seq0,
-              status: initialStatus,
-              error: latestRun?.error ?? undefined,
-              nodes: nodeRunRows.map((nr) => ({
-                nodeId: nr.nodeId,
-                status: nr.status as NodeRunStatus,
-                error: nr.error ?? undefined,
-              })),
+              run: formatAgentLoopRun(currentRow),
             },
             initialTerminalStatus: isTerminal ? initialStatus : null,
           };

@@ -127,6 +127,22 @@ export function redisUrl() {
   return url ?? "redis://localhost:6379";
 }
 
+export const unusedAgentLoops: import("../src/temporal/agent-loops").AgentLoopService =
+  {
+    start: async () => {
+      throw new Error("agentLoops.start must not be called in this test");
+    },
+    signalApproval: async () => {
+      throw new Error(
+        "agentLoops.signalApproval must not be called in this test",
+      );
+    },
+    describe: async () => {
+      throw new Error("agentLoops.describe must not be called in this test");
+    },
+    ping: async () => {},
+  };
+
 /**
  * Backend wired to a real Better Auth instance. postgres-js connects lazily, so
  * without TEST_DATABASE_URL this still works for tests that never touch the database.
@@ -136,23 +152,27 @@ export function createTestApp(
     "postgresql://nobody:nobody@127.0.0.1:1/none",
   {
     agentRuns = unusedAgentRuns,
+    agentLoops = unusedAgentLoops,
     canvasRuns = unusedCanvasRuns,
     assetProbes = unusedAssetProbes,
     providerRegistry,
     registry,
     production,
     bus,
+    agentBus,
     redis,
     pingIntervalMs,
     storage,
   }: {
     agentRuns?: AgentRunService;
+    agentLoops?: import("../src/temporal/agent-loops").AgentLoopService;
     canvasRuns?: CanvasRunService;
     assetProbes?: AssetProbeService;
     providerRegistry?: ProviderRegistry;
     registry?: Registry;
     production?: boolean;
     bus?: RunEventBus;
+    agentBus?: import("../src/realtime/run-event-bus").AgentEventBus;
     redis?: Redis;
     pingIntervalMs?: number;
     storage?: import("@creative/storage").ObjectStorage;
@@ -171,12 +191,14 @@ export function createTestApp(
     internalSecret: INTERNAL_SECRET,
     webOrigin: WEB_ORIGIN,
     agentRuns,
+    agentLoops,
     canvasRuns,
     assetProbes,
     providerRegistry,
     registry,
     production,
     bus,
+    agentBus,
     redis,
     pingIntervalMs,
     storage,

@@ -10,7 +10,11 @@ import { createTemporalAssetProbes } from "./temporal/asset-probes";
 import { defaultProviderRegistry } from "@creative/providers";
 
 import { Redis } from "ioredis";
-import { createRunEventBus } from "./realtime/run-event-bus";
+import {
+  createAgentEventBus,
+  createRunEventBus,
+} from "./realtime/run-event-bus";
+import { createTemporalAgentLoops } from "./temporal/agent-loops";
 import { createS3Storage } from "@creative/storage";
 
 const config = loadConfig();
@@ -44,6 +48,18 @@ const subscriberRedis = config.redisUrl
 
 const bus = subscriberRedis ? createRunEventBus(subscriberRedis) : undefined;
 
+const agentSubscriberRedis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+
+const agentBus = agentSubscriberRedis
+  ? createAgentEventBus(agentSubscriberRedis)
+  : undefined;
+
 const storage = config.s3 ? createS3Storage(config.s3) : undefined;
 if (storage && config.s3?.configureCors) {
   storage.configureCors([config.webOrigin]).catch((err) => {
@@ -57,9 +73,14 @@ const app = buildApp({
   internalSecret: config.internalSecret,
   webOrigin: config.webOrigin,
   bus,
+  agentBus,
   redis,
   storage,
   agentRuns: createTemporalAgentRuns({
+    client: temporalClient,
+    connection: temporal,
+  }),
+  agentLoops: createTemporalAgentLoops({
     client: temporalClient,
     connection: temporal,
   }),
