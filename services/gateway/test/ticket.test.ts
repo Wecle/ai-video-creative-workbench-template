@@ -390,7 +390,9 @@ describe("gateway realtime tickets", () => {
   });
 
   it("rate limits realtimeTicket tier per user", async () => {
-    const { gateway } = await boot();
+    const { gateway } = await boot({
+      rateLimitNamespace: `test:ticket-rl:${randomUUID()}:`,
+    });
     const rlUser = await bearer("c0000000-0000-4000-8000-000000000003");
     for (let i = 0; i < 20; i++) {
       const res = await fetch(`${gateway.url}/api/v1/realtime-tickets`, {
