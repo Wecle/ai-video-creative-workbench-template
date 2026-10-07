@@ -189,6 +189,29 @@ services:
       timeout: 3s
       retries: 10
 
+  orchestrator-worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.node
+      args:
+        APP: "@creative/orchestrator-worker"
+    environment:
+      DATABASE_URL: postgresql://template:template@postgres:5432/template
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      MOCK_PROVIDER_WEBHOOK_SECRET: ${MOCK_PROVIDER_WEBHOOK_SECRET:-mock-provider-webhook-secret-key-32chars}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal-namespace:
+        condition: service_completed_successfully
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/orchestrator-worker.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   media-worker:
     build:
       context: ../..
