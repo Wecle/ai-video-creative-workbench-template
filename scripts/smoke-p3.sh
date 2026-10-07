@@ -100,6 +100,15 @@ rm -f "$start_req"
 AGENT_RUN_ID=$(jq -r .run.id "$BODY")
 check "P3.7 agentRunId returned" true "$([ -n "$AGENT_RUN_ID" ] && [ "$AGENT_RUN_ID" != "null" ] && echo true || echo false)"
 
+# Open SSE stream for User A immediately to capture live events
+ticket_req="$(mktemp)"; jq -n --arg id "$AGENT_RUN_ID" '{agentRunId: $id}' > "$ticket_req"
+api "$TOKEN_A" POST /api/v1/realtime-tickets "$ticket_req" >/dev/null
+rm -f "$ticket_req"
+STREAM_TICKET=$(jq -r .ticket "$BODY")
+
+curl -N -s -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/agent/runs/$AGENT_RUN_ID/events?ticket=$STREAM_TICKET" > "$SSE_OUT" 2>&1 &
+SSE_PID=$!
+
 # Realtime Ticket Authorization & Single-Use Checks
 echo "== Ticket authorization & isolation"
 ticket_req="$(mktemp)"; jq -n --arg id "$AGENT_RUN_ID" '{agentRunId: $id}' > "$ticket_req"
@@ -133,15 +142,6 @@ check "P3.13 first ticket usage succeeds" "200" "$HTTP_CODE_1"
 # Reuse same ticket -> 401 Unauthorized
 HTTP_CODE_REUSE=$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/agent/runs/$AGENT_RUN_ID/events?ticket=$TICKET_A1")
 check "P3.14 single-use ticket reuse -> 401" 401 "$HTTP_CODE_REUSE"
-
-# Open SSE stream for User A
-ticket_req="$(mktemp)"; jq -n --arg id "$AGENT_RUN_ID" '{agentRunId: $id}' > "$ticket_req"
-api "$TOKEN_A" POST /api/v1/realtime-tickets "$ticket_req" >/dev/null
-rm -f "$ticket_req"
-STREAM_TICKET=$(jq -r .ticket "$BODY")
-
-curl -N -s -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/agent/runs/$AGENT_RUN_ID/events?ticket=$STREAM_TICKET" > "$SSE_OUT" 2>&1 &
-SSE_PID=$!
 
 # Wait for snapshot, text delta, and proposed events
 echo "Waiting for SSE events (snapshot, text delta, tool proposal)..."
@@ -185,11 +185,11 @@ check "P3.20 active proposal toolCallId exists" true "$([ -n "$TOOL_CALL_ID" ] &
 # Optional worker restart check if requested
 if [ "$CHECK_RESTART" = "1" ]; then
   echo "Testing worker restart while waiting for approval..."
-  docker compose -f "$ROOT/infra/docker/docker-compose.full.yml" restart agent-runner
+  docker compose --env-file "$ROOT/.env" -f "$ROOT/infra/docker/docker-compose.full.yml" restart agent-runner
   echo "Waiting for agent-runner to become healthy again..."
   STATUS="unknown"
   for attempt in $(seq 1 30); do
-    STATUS=$(docker inspect --format='{{.State.Health.Status}}' creative-agent-runner-1 2>/dev/null || docker inspect --format='{{.State.Health.Status}}' $(docker ps -q -f name=agent-runner) 2>/dev/null || echo "unknown")
+    STATUS=$(docker inspect --format='{{.State.Health.Status}}' creative-full-agent-runner-1 2>/dev/null || echo "unknown")
     if [ "$STATUS" = "healthy" ]; then
       break
     fi
