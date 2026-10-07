@@ -8,6 +8,7 @@ import {
   healthSchema,
   meResponseSchema,
   projectListResponseSchema,
+  probeAssetResponseSchema,
   realtimeTicketResponseSchema,
   requestAssetUploadResponseSchema,
   saveCanvasResponseSchema,
@@ -189,6 +190,16 @@ export function createApiClient(
       getAssetDownloadUrlResponseSchema.parse(
         await get(
           `/api/v1/assets/${encodeURIComponent(assetId)}/download-url`,
+          {
+            auth: true,
+          },
+        ),
+      ),
+    probeAsset: async (assetId: string) =>
+      probeAssetResponseSchema.parse(
+        await request(
+          "POST",
+          `/api/v1/assets/${encodeURIComponent(assetId)}/probe`,
           {
             auth: true,
           },

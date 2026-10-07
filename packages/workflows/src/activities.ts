@@ -108,3 +108,29 @@ export interface OrchestratorActivities {
   recordNodeRunCompleted(input: RecordNodeRunCompletedInput): Promise<void>;
   updateRunStatus(input: UpdateRunStatusInput): Promise<void>;
 }
+
+import type { MediaProbeInput, MediaProbeResult } from "@creative/contracts";
+
+export type LoadAssetInput = {
+  assetId: string;
+};
+
+export type LoadAssetResult = {
+  assetKey: string;
+  contentType: string;
+  sizeBytes: number;
+};
+
+export type SaveAssetMetadataInput = {
+  assetId: string;
+  metadata: MediaProbeResult;
+};
+
+export interface MediaActivities {
+  "media.probe"(input: MediaProbeInput): Promise<MediaProbeResult>;
+}
+
+export interface OrchestratorAssetActivities {
+  loadAsset(input: LoadAssetInput): Promise<LoadAssetResult>;
+  saveAssetMetadata(input: SaveAssetMetadataInput): Promise<void>;
+}

@@ -34,6 +34,7 @@ import type { ObjectStorage } from "@creative/storage";
 import type { RunEventBus } from "./realtime/run-event-bus";
 import type { AgentRunService } from "./temporal/agent-runs";
 import type { CanvasRunService } from "./temporal/canvas-runs";
+import type { AssetProbeService } from "./temporal/asset-probes";
 
 const defaultCanvasRuns: CanvasRunService = {
   start: async () => {
@@ -44,6 +45,14 @@ const defaultCanvasRuns: CanvasRunService = {
   sendCallbackSignal: async () => {
     throw new Error(
       "canvasRuns.sendCallbackSignal must not be called without being provided",
+    );
+  },
+};
+
+const defaultAssetProbes: AssetProbeService = {
+  start: async () => {
+    throw new Error(
+      "assetProbes.start must not be called without being provided",
     );
   },
 };
@@ -60,6 +69,8 @@ export type BackendOptions = {
   agentRuns: AgentRunService;
   /** Starts canvas runs and signals workflows. */
   canvasRuns?: CanvasRunService;
+  /** Starts media probe workflows. */
+  assetProbes?: AssetProbeService;
   /** Provider registry (default: defaultProviderRegistry). */
   providerRegistry?: ProviderRegistry;
   /** Node definitions saved canvases are validated against (default: the shipped registry). */
@@ -89,6 +100,7 @@ export function buildApp({
   webOrigin,
   agentRuns,
   canvasRuns = defaultCanvasRuns,
+  assetProbes = defaultAssetProbes,
   providerRegistry = defaultProviderRegistry,
   registry = defaultRegistry,
   production = false,
@@ -172,7 +184,7 @@ export function buildApp({
       await projectRoutes(v1, db);
       await canvasRoutes(v1, db, registry);
       await canvasRunRoutes(v1, db, canvasRuns, allowMockMode);
-      await assetRoutes(v1, { db, storage });
+      await assetRoutes(v1, { db, storage, assetProbes });
     });
   });
   return app;

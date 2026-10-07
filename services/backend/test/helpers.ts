@@ -55,6 +55,7 @@ export function signedHeaders(
  * start/get throw. ping resolves so that /ready only reflects the database.
  */
 import type { CanvasRunService } from "../src/temporal/canvas-runs";
+import type { AssetProbeService } from "../src/temporal/asset-probes";
 import type { ProviderRegistry } from "@creative/providers";
 
 export const unusedAgentRuns: AgentRunService = {
@@ -75,6 +76,12 @@ export const unusedCanvasRuns: CanvasRunService = {
     throw new Error(
       "canvasRuns.sendCallbackSignal must not be called in this test",
     );
+  },
+};
+
+export const unusedAssetProbes: AssetProbeService = {
+  start: async () => {
+    throw new Error("assetProbes.start must not be called in this test");
   },
 };
 
@@ -130,6 +137,7 @@ export function createTestApp(
   {
     agentRuns = unusedAgentRuns,
     canvasRuns = unusedCanvasRuns,
+    assetProbes = unusedAssetProbes,
     providerRegistry,
     registry,
     production,
@@ -140,6 +148,7 @@ export function createTestApp(
   }: {
     agentRuns?: AgentRunService;
     canvasRuns?: CanvasRunService;
+    assetProbes?: AssetProbeService;
     providerRegistry?: ProviderRegistry;
     registry?: Registry;
     production?: boolean;
@@ -163,6 +172,7 @@ export function createTestApp(
     webOrigin: WEB_ORIGIN,
     agentRuns,
     canvasRuns,
+    assetProbes,
     providerRegistry,
     registry,
     production,

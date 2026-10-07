@@ -4,19 +4,24 @@ import { schema } from "@creative/database";
 import type { CanvasSnapshot } from "@creative/contracts";
 import type { ProviderRegistry } from "@creative/providers";
 import type { RunEventPublisher } from "./events";
+import { ApplicationFailure } from "@temporalio/activity";
 import type {
   ExecuteNodeInput,
   ExecuteNodeResult,
+  LoadAssetInput,
+  LoadAssetResult,
   OrchestratorActivities,
+  OrchestratorAssetActivities,
   PollJobInput,
   PollJobResult,
   RecordNodeRunCompletedInput,
   RecordNodeRunStartedInput,
   RunGraphData,
+  SaveAssetMetadataInput,
   UpdateRunStatusInput,
 } from "@creative/workflows/activities";
 
-const { runs, node_runs } = schema;
+const { runs, node_runs, assets } = schema;
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
@@ -30,7 +35,7 @@ export function createActivities({
   db,
   registry,
   events,
-}: ActivityContext): OrchestratorActivities {
+}: ActivityContext): OrchestratorActivities & OrchestratorAssetActivities {
   return {
     async loadRunGraph(runId: string): Promise<RunGraphData> {
       const [run] = await db
@@ -238,6 +243,44 @@ export function createActivities({
         status: input.status,
         error: input.error ?? undefined,
       });
+    },
+
+    async loadAsset(input: LoadAssetInput): Promise<LoadAssetResult> {
+      const [asset] = await db
+        .select()
+        .from(assets)
+        .where(eq(assets.id, input.assetId))
+        .limit(1);
+
+      if (!asset) {
+        throw ApplicationFailure.nonRetryable(
+          `Asset not found: ${input.assetId}`,
+          "AssetNotFound",
+        );
+      }
+
+      if (asset.status !== "ready") {
+        throw ApplicationFailure.nonRetryable(
+          `Asset not ready: ${input.assetId}`,
+          "AssetNotReady",
+        );
+      }
+
+      return {
+        assetKey: asset.key,
+        contentType: asset.contentType,
+        sizeBytes: asset.sizeBytes,
+      };
+    },
+
+    async saveAssetMetadata(input: SaveAssetMetadataInput): Promise<void> {
+      await db
+        .update(assets)
+        .set({
+          metadata: input.metadata,
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, input.assetId));
     },
   };
 }

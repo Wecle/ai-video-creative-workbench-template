@@ -6,6 +6,7 @@ import { createDatabase, schema } from "@creative/database";
 import { startTelemetry } from "@creative/observability";
 import { createTemporalAgentRuns } from "./temporal/agent-runs";
 import { createTemporalCanvasRuns } from "./temporal/canvas-runs";
+import { createTemporalAssetProbes } from "./temporal/asset-probes";
 import { defaultProviderRegistry } from "@creative/providers";
 
 import { Redis } from "ioredis";
@@ -63,6 +64,10 @@ const app = buildApp({
     connection: temporal,
   }),
   canvasRuns: createTemporalCanvasRuns({
+    client: temporalClient,
+    connection: temporal,
+  }),
+  assetProbes: createTemporalAssetProbes({
     client: temporalClient,
     connection: temporal,
   }),

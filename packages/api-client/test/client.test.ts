@@ -376,6 +376,19 @@ describe("API client", () => {
       expect(fetcher.mock.calls[3]![0]).toBe(
         `/gateway/api/v1/assets/${assetId}/download-url`,
       );
+
+      // 5. probeAsset
+      fetcher.mockResolvedValueOnce(
+        json({ queued: true, workflowId: `asset-probe:${assetId}` }),
+      );
+      const pr = await api.probeAsset(assetId);
+      expect(pr).toEqual({
+        queued: true,
+        workflowId: `asset-probe:${assetId}`,
+      });
+      expect(fetcher.mock.calls[4]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}/probe`,
+      );
     });
   });
 });

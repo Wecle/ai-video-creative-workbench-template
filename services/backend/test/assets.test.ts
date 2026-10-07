@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { ASSET_MAX_BYTES } from "@creative/contracts";
 import { schema } from "@creative/database";
 import { createMemoryStorage } from "@creative/storage";
+import type { AssetProbeService } from "../src/temporal/asset-probes";
 import {
   createTestApp,
   createUserWithWorkspace,
@@ -382,5 +384,121 @@ describe.skipIf(!dbUrl)("backend assets routes", () => {
     });
     expect(readyDl.statusCode).toBe(200);
     expect(readyDl.json().url).toContain("memory://");
+  });
+
+  it("handles asset probe authorization, state checks, and workflow triggering", async () => {
+    let probedAssetId: string | null = null;
+    let shouldFail = false;
+
+    const mockProbes: AssetProbeService = {
+      async start(assetId: string) {
+        if (shouldFail) {
+          throw new Error("Temporal connection failure");
+        }
+        probedAssetId = assetId;
+        return { queued: true, workflowId: `asset-probe:${assetId}` };
+      },
+    };
+
+    const probeApp = createTestApp(dbUrl, {
+      storage,
+      assetProbes: mockProbes,
+    }).app;
+
+    const user = await createUserWithWorkspace(db, "probe-user");
+    const other = await createUserWithWorkspace(db, "probe-other");
+
+    // Insert pending asset
+    const [pendingRow] = await db
+      .insert(assets)
+      .values({
+        workspaceId: user.workspaceId,
+        key: `workspaces/${user.workspaceId}/assets/pending-p`,
+        contentType: "image/png",
+        sizeBytes: 100,
+        status: "pending",
+        createdBy: user.userId,
+      })
+      .returning();
+
+    // Insert ready asset
+    const [readyRow] = await db
+      .insert(assets)
+      .values({
+        workspaceId: user.workspaceId,
+        key: `workspaces/${user.workspaceId}/assets/ready-p`,
+        contentType: "image/png",
+        sizeBytes: 200,
+        status: "ready",
+        createdBy: user.userId,
+      })
+      .returning();
+
+    // 1. Non-existent asset -> 404
+    const notFoundId = randomUUID();
+    const notFoundRes = await probeApp.inject({
+      method: "POST",
+      url: `/api/v1/assets/${notFoundId}/probe`,
+      headers: signedHeaders(
+        "POST",
+        `/api/v1/assets/${notFoundId}/probe`,
+        who(user.userId),
+      ),
+    });
+    expect(notFoundRes.statusCode).toBe(404);
+
+    // 2. Non-member asset -> 404
+    const nonMemberRes = await probeApp.inject({
+      method: "POST",
+      url: `/api/v1/assets/${readyRow!.id}/probe`,
+      headers: signedHeaders(
+        "POST",
+        `/api/v1/assets/${readyRow!.id}/probe`,
+        who(other.userId),
+      ),
+    });
+    expect(nonMemberRes.statusCode).toBe(404);
+
+    // 3. Pending asset -> 409
+    const pendingRes = await probeApp.inject({
+      method: "POST",
+      url: `/api/v1/assets/${pendingRow!.id}/probe`,
+      headers: signedHeaders(
+        "POST",
+        `/api/v1/assets/${pendingRow!.id}/probe`,
+        who(user.userId),
+      ),
+    });
+    expect(pendingRes.statusCode).toBe(409);
+
+    // 4. Ready asset -> 202
+    const readyRes = await probeApp.inject({
+      method: "POST",
+      url: `/api/v1/assets/${readyRow!.id}/probe`,
+      headers: signedHeaders(
+        "POST",
+        `/api/v1/assets/${readyRow!.id}/probe`,
+        who(user.userId),
+      ),
+    });
+    expect(readyRes.statusCode).toBe(202);
+    expect(readyRes.json()).toEqual({
+      queued: true,
+      workflowId: `asset-probe:${readyRow!.id}`,
+    });
+    expect(probedAssetId).toBe(readyRow!.id);
+
+    // 5. Temporal failure -> 503
+    shouldFail = true;
+    const failRes = await probeApp.inject({
+      method: "POST",
+      url: `/api/v1/assets/${readyRow!.id}/probe`,
+      headers: signedHeaders(
+        "POST",
+        `/api/v1/assets/${readyRow!.id}/probe`,
+        who(user.userId),
+      ),
+    });
+    expect(failRes.statusCode).toBe(503);
   });
 });

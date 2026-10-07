@@ -46,3 +46,22 @@ export function canvasRunWorkflowId(canvasId: string, runId: string): string {
   }
   return `canvas-run:${canvasId}:${runId}`;
 }
+
+/** Task queue served by `workers/media-worker-python`. */
+export const MEDIA_TASK_QUEUE = "media";
+
+/** Media probe workflow type name. */
+export const MEDIA_PROBE_WORKFLOW_TYPE = "mediaProbeWorkflow";
+
+/** Media probe activity name. */
+export const MEDIA_PROBE_ACTIVITY = "media.probe";
+
+/**
+ * Media probe workflow ID derived from assetId.
+ */
+export function assetProbeWorkflowId(assetId: string): string {
+  if (!assetId || assetId.includes(":")) {
+    throw new Error("Invalid asset identifier");
+  }
+  return `asset-probe:${assetId}`;
+}

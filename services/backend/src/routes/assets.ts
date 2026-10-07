@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
   ASSET_URL_TTL_SECONDS,
+  probeAssetResponseSchema,
   requestAssetUploadRequestSchema,
   type AssetSummary,
 } from "@creative/contracts";
@@ -11,6 +12,7 @@ import { schema } from "@creative/database";
 import type { ObjectStorage } from "@creative/storage";
 import { findAccessibleAsset, isWorkspaceMember } from "../assets/access";
 import { requireUser } from "../plugins/gateway-trust";
+import type { AssetProbeService } from "../temporal/asset-probes";
 import type { Database } from "./me";
 
 const { assets } = schema;
@@ -18,9 +20,7 @@ const { assets } = schema;
 export type AssetRoutesOptions = {
   db: Database;
   storage?: ObjectStorage;
-  assetProbes?: {
-    startProbe: (assetId: string) => Promise<{ workflowId: string }>;
-  };
+  assetProbes?: AssetProbeService;
 };
 
 const paramsSchema = z.object({
@@ -234,6 +234,46 @@ export async function assetRoutes(
         url: download.url,
         expiresIn: ASSET_URL_TTL_SECONDS,
       });
+    },
+  );
+
+  // 5. POST /api/v1/assets/:assetId/probe
+  app.post(
+    "/api/v1/assets/:assetId/probe",
+    { onRequest: [requireUser] },
+    async (request, reply) => {
+      const parsedParams = paramsSchema.safeParse(request.params);
+      if (!parsedParams.success) {
+        return reply.code(400).send({ error: "Invalid asset ID" });
+      }
+      const { assetId } = parsedParams.data;
+      const userId = request.identity.userId!;
+
+      const asset = await findAccessibleAsset(db, userId, assetId);
+      if (!asset) {
+        return reply.code(404).send({ error: "Asset not found" });
+      }
+
+      if (asset.status !== "ready") {
+        return reply.code(409).send({ error: "Asset is not ready" });
+      }
+
+      if (!options.assetProbes) {
+        return reply
+          .code(503)
+          .send({ error: "Asset probe service is unavailable" });
+      }
+
+      try {
+        const result = await options.assetProbes.start(asset.id);
+        const parsed = probeAssetResponseSchema.parse(result);
+        return reply.code(202).send(parsed);
+      } catch (error) {
+        request.log.error({ err: error }, "Failed to start asset probe");
+        return reply
+          .code(503)
+          .send({ error: "Asset probe service is unavailable" });
+      }
     },
   );
 }
