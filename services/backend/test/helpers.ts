@@ -55,6 +55,7 @@ export function signedHeaders(
  * start/get throw. ping resolves so that /ready only reflects the database.
  */
 import type { CanvasRunService } from "../src/temporal/canvas-runs";
+import type { AssetProbeService } from "../src/temporal/asset-probes";
 import type { ProviderRegistry } from "@creative/providers";
 
 export const unusedAgentRuns: AgentRunService = {
@@ -75,6 +76,12 @@ export const unusedCanvasRuns: CanvasRunService = {
     throw new Error(
       "canvasRuns.sendCallbackSignal must not be called in this test",
     );
+  },
+};
+
+export const unusedAssetProbes: AssetProbeService = {
+  start: async () => {
+    throw new Error("assetProbes.start must not be called in this test");
   },
 };
 
@@ -104,6 +111,22 @@ export async function createTemporalTestEnv() {
   });
 }
 
+import type { Redis } from "ioredis";
+import type { RunEventBus } from "../src/realtime/run-event-bus";
+
+export function redisUrl() {
+  if (!process.env.REDIS_URL) {
+    try {
+      process.loadEnvFile(new URL("../../../.env", import.meta.url));
+    } catch {
+      // ignore
+    }
+  }
+  const url = process.env.REDIS_URL;
+  if (!url && process.env.CI) throw new Error("REDIS_URL is required in CI");
+  return url ?? "redis://localhost:6379";
+}
+
 /**
  * Backend wired to a real Better Auth instance. postgres-js connects lazily, so
  * without TEST_DATABASE_URL this still works for tests that never touch the database.
@@ -114,15 +137,25 @@ export function createTestApp(
   {
     agentRuns = unusedAgentRuns,
     canvasRuns = unusedCanvasRuns,
+    assetProbes = unusedAssetProbes,
     providerRegistry,
     registry,
     production,
+    bus,
+    redis,
+    pingIntervalMs,
+    storage,
   }: {
     agentRuns?: AgentRunService;
     canvasRuns?: CanvasRunService;
+    assetProbes?: AssetProbeService;
     providerRegistry?: ProviderRegistry;
     registry?: Registry;
     production?: boolean;
+    bus?: RunEventBus;
+    redis?: Redis;
+    pingIntervalMs?: number;
+    storage?: import("@creative/storage").ObjectStorage;
   } = {},
 ) {
   const database = createDatabase(databaseUrl);
@@ -139,9 +172,14 @@ export function createTestApp(
     webOrigin: WEB_ORIGIN,
     agentRuns,
     canvasRuns,
+    assetProbes,
     providerRegistry,
     registry,
     production,
+    bus,
+    redis,
+    pingIntervalMs,
+    storage,
   });
   return {
     app,

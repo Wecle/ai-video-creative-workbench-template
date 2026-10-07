@@ -1,13 +1,20 @@
 import {
   createProjectResponseSchema,
+  completeAssetResponseSchema,
+  getAssetDownloadUrlResponseSchema,
+  getAssetResponseSchema,
   getCanvasResponseSchema,
   getCanvasRunResponseSchema,
   healthSchema,
   meResponseSchema,
   projectListResponseSchema,
+  probeAssetResponseSchema,
+  realtimeTicketResponseSchema,
+  requestAssetUploadResponseSchema,
   saveCanvasResponseSchema,
   startCanvasRunResponseSchema,
   type CreateProjectRequest,
+  type RequestAssetUploadRequest,
   type SaveCanvasRequest,
   type StartCanvasRunRequest,
 } from "@creative/contracts";
@@ -149,6 +156,53 @@ export function createApiClient(
             "/runs/" +
             encodeURIComponent(runId),
           { auth: true },
+        ),
+      ),
+    createRealtimeTicket: async (runId: string) =>
+      realtimeTicketResponseSchema.parse(
+        await request("POST", "/api/v1/realtime-tickets", {
+          auth: true,
+          body: { runId },
+        }),
+      ),
+    requestAssetUpload: async (input: RequestAssetUploadRequest) =>
+      requestAssetUploadResponseSchema.parse(
+        await request("POST", "/api/v1/assets/upload-url", {
+          auth: true,
+          body: input,
+        }),
+      ),
+    completeAsset: async (assetId: string) =>
+      completeAssetResponseSchema.parse(
+        await request(
+          "POST",
+          `/api/v1/assets/${encodeURIComponent(assetId)}/complete`,
+          { auth: true },
+        ),
+      ),
+    getAsset: async (assetId: string) =>
+      getAssetResponseSchema.parse(
+        await get(`/api/v1/assets/${encodeURIComponent(assetId)}`, {
+          auth: true,
+        }),
+      ),
+    getAssetDownloadUrl: async (assetId: string) =>
+      getAssetDownloadUrlResponseSchema.parse(
+        await get(
+          `/api/v1/assets/${encodeURIComponent(assetId)}/download-url`,
+          {
+            auth: true,
+          },
+        ),
+      ),
+    probeAsset: async (assetId: string) =>
+      probeAssetResponseSchema.parse(
+        await request(
+          "POST",
+          `/api/v1/assets/${encodeURIComponent(assetId)}/probe`,
+          {
+            auth: true,
+          },
         ),
       ),
   };

@@ -6,7 +6,12 @@ import { createDatabase, schema } from "@creative/database";
 import { startTelemetry } from "@creative/observability";
 import { createTemporalAgentRuns } from "./temporal/agent-runs";
 import { createTemporalCanvasRuns } from "./temporal/canvas-runs";
+import { createTemporalAssetProbes } from "./temporal/asset-probes";
 import { defaultProviderRegistry } from "@creative/providers";
+
+import { Redis } from "ioredis";
+import { createRunEventBus } from "./realtime/run-event-bus";
+import { createS3Storage } from "@creative/storage";
 
 const config = loadConfig();
 const telemetry = startTelemetry(
@@ -20,16 +25,49 @@ const temporalClient = new Client({
   connection: temporal,
   namespace: config.temporalNamespace,
 });
+
+const redis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+
+const subscriberRedis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+
+const bus = subscriberRedis ? createRunEventBus(subscriberRedis) : undefined;
+
+const storage = config.s3 ? createS3Storage(config.s3) : undefined;
+if (storage && config.s3?.configureCors) {
+  storage.configureCors([config.webOrigin]).catch((err) => {
+    console.warn("Failed to configure S3 CORS:", err);
+  });
+}
+
 const app = buildApp({
   auth,
   db: database.db,
   internalSecret: config.internalSecret,
   webOrigin: config.webOrigin,
+  bus,
+  redis,
+  storage,
   agentRuns: createTemporalAgentRuns({
     client: temporalClient,
     connection: temporal,
   }),
   canvasRuns: createTemporalCanvasRuns({
+    client: temporalClient,
+    connection: temporal,
+  }),
+  assetProbes: createTemporalAssetProbes({
     client: temporalClient,
     connection: temporal,
   }),
@@ -43,6 +81,7 @@ async function shutdown() {
   closing = true;
   try {
     await app.close();
+    await redis?.quit();
     await temporal.close();
     await database.close();
     await telemetry.shutdown();

@@ -48,11 +48,26 @@ describe("backend config", () => {
         BETTER_AUTH_SECRET: `dev-only-${secret}`,
       }),
     ).toThrow(/BETTER_AUTH_SECRET must not use the dev-only/);
+
+    expect(() =>
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        TEMPORAL_ADDRESS: "temporal:7233",
+        REDIS_URL: "redis://localhost:6379",
+      }),
+    ).toThrow(/S3_\* configuration is required in production/);
+
     expect(
       loadConfig({
         ...env,
         NODE_ENV: "production",
         TEMPORAL_ADDRESS: "temporal:7233",
+        REDIS_URL: "redis://localhost:6379",
+        S3_ENDPOINT: "http://s3:8333",
+        S3_ACCESS_KEY: "key",
+        S3_SECRET_KEY: "secret",
+        S3_BUCKET: "bucket",
       }).production,
     ).toBe(true);
   });
@@ -74,9 +89,21 @@ describe("backend config", () => {
     });
   });
 
-  it("requires TEMPORAL_ADDRESS in production", () => {
-    expect(() => loadConfig({ ...env, NODE_ENV: "production" })).toThrow(
-      /TEMPORAL_ADDRESS is required in production/,
-    );
+  it("requires TEMPORAL_ADDRESS and REDIS_URL in production", () => {
+    expect(() =>
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        REDIS_URL: "redis://localhost:6379",
+      }),
+    ).toThrow(/TEMPORAL_ADDRESS is required in production/);
+
+    expect(() =>
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        TEMPORAL_ADDRESS: "temporal:7233",
+      }),
+    ).toThrow(/REDIS_URL is required in production/);
   });
 });

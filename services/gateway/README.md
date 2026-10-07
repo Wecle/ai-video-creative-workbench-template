@@ -9,4 +9,4 @@
 - src/config.ts、src/server.ts：环境变量解析和服务启动
 - test：入口、代理、认证、实时连接和限流测试
 
-默认监听 127.0.0.1:4000，通过 BACKEND_URL 指向 Backend；JWKS 取自 `BACKEND_URL/api/auth/jwks`。生产环境必须设置 REDIS_URL、TRUST_PROXY（Gateway 前面代理的 CIDR）和真实的 INTERNAL_AUTH_SECRET。`/api/v1/realtime/*` 在 P0a 只接受 `Authorization: Bearer <JWT>`，浏览器票据方案推迟到 P2。构建时 OpenTelemetry 保持 external，作为运行时依赖安装。
+默认监听 127.0.0.1:4000，通过 BACKEND_URL 指向 Backend；JWKS 取自 `BACKEND_URL/api/auth/jwks`。生产环境必须设置 REDIS_URL、TRUST_PROXY（Gateway 前面代理的 CIDR）、GATEWAY_TICKET_SECRET 和真实的 INTERNAL_AUTH_SECRET。实时连接支持通过 `POST /api/v1/realtime-tickets` 签发短寿命单次票据（30 秒），在 `GET /api/v1/realtime/runs/:runId/events?ticket=...` 经 Redis 原子消费并校验单次有效性与 Origin 白名单；亦支持直接使用 `Authorization: Bearer <JWT>`。构建时 OpenTelemetry 保持 external，作为运行时依赖安装。

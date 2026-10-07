@@ -103,7 +103,6 @@ describe("internal identity headers", () => {
       { [INTERNAL_HEADERS.timestamp]: "-5" },
       { [INTERNAL_HEADERS.signature]: "short" },
       { [INTERNAL_HEADERS.signature]: "!!!!" },
-      { [INTERNAL_HEADERS.authType]: "ticket" },
       { [INTERNAL_HEADERS.authType]: "admin" },
       { [INTERNAL_HEADERS.userId]: "a\nb" },
       { [INTERNAL_HEADERS.userId]: "" },
@@ -115,6 +114,44 @@ describe("internal identity headers", () => {
         ok: false,
         reason: "malformed",
       });
+  });
+
+  it("round-trips a ticket identity", () => {
+    const ticketUser = {
+      authType: "ticket",
+      userId: "user_ticket-456",
+    } as const;
+    const headers = sign({ identity: ticketUser });
+    expect(headers[INTERNAL_HEADERS.authType]).toBe("ticket");
+    expect(headers[INTERNAL_HEADERS.userId]).toBe(ticketUser.userId);
+    expect(verify(headers)).toEqual({ ok: true, identity: ticketUser });
+  });
+
+  it("rejects jwt and ticket tampering", () => {
+    const jwtHeaders = sign();
+    // Tamper authType from jwt to ticket
+    expect(
+      verify({ ...jwtHeaders, [INTERNAL_HEADERS.authType]: "ticket" }),
+    ).toEqual({ ok: false, reason: "bad_signature" });
+
+    const ticketHeaders = sign({
+      identity: { authType: "ticket", userId: "user_ticket-456" },
+    });
+    // Tamper authType from ticket to jwt
+    expect(
+      verify({ ...ticketHeaders, [INTERNAL_HEADERS.authType]: "jwt" }),
+    ).toEqual({ ok: false, reason: "bad_signature" });
+  });
+
+  it("rejects ticket missing user id", () => {
+    const ticketHeaders = sign({
+      identity: { authType: "ticket", userId: "user_ticket-456" },
+    });
+    const noUserId = { ...ticketHeaders };
+    delete (noUserId as Record<string, string | undefined>)[
+      INTERNAL_HEADERS.userId
+    ];
+    expect(verify(noUserId)).toEqual({ ok: false, reason: "malformed" });
   });
 
   it("rejects a user id header on an anonymous identity", () => {
@@ -129,6 +166,12 @@ describe("internal identity headers", () => {
       sign({ identity: { authType: "jwt", userId: "a\nanonymous" } }),
     ).toThrow();
     expect(() => sign({ identity: { authType: "jwt", userId: "" } })).toThrow();
+    expect(() =>
+      sign({ identity: { authType: "ticket", userId: "a\nanonymous" } }),
+    ).toThrow();
+    expect(() =>
+      sign({ identity: { authType: "ticket", userId: "" } }),
+    ).toThrow();
   });
 
   it("rejects a wrong secret", () => {

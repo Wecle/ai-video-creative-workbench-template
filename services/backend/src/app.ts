@@ -21,14 +21,20 @@ import { sql } from "drizzle-orm";
 import type { Auth } from "./auth/auth";
 import { authRoutes } from "./auth/routes";
 import { requireUser, verifyGatewayIdentity } from "./plugins/gateway-trust";
+import type { Redis } from "ioredis";
 import { agentRunRoutes } from "./routes/agent-runs";
 import { canvasRoutes } from "./routes/canvases";
 import { canvasRunRoutes } from "./routes/canvas-runs";
 import { projectRoutes } from "./routes/projects";
 import { meRoutes, type Database } from "./routes/me";
+import { realtimeRoutes } from "./routes/realtime";
 import { webhookRoutes } from "./routes/webhooks";
+import { assetRoutes } from "./routes/assets";
+import type { ObjectStorage } from "@creative/storage";
+import type { RunEventBus } from "./realtime/run-event-bus";
 import type { AgentRunService } from "./temporal/agent-runs";
 import type { CanvasRunService } from "./temporal/canvas-runs";
+import type { AssetProbeService } from "./temporal/asset-probes";
 
 const defaultCanvasRuns: CanvasRunService = {
   start: async () => {
@@ -39,6 +45,14 @@ const defaultCanvasRuns: CanvasRunService = {
   sendCallbackSignal: async () => {
     throw new Error(
       "canvasRuns.sendCallbackSignal must not be called without being provided",
+    );
+  },
+};
+
+const defaultAssetProbes: AssetProbeService = {
+  start: async () => {
+    throw new Error(
+      "assetProbes.start must not be called without being provided",
     );
   },
 };
@@ -55,6 +69,8 @@ export type BackendOptions = {
   agentRuns: AgentRunService;
   /** Starts canvas runs and signals workflows. */
   canvasRuns?: CanvasRunService;
+  /** Starts media probe workflows. */
+  assetProbes?: AssetProbeService;
   /** Provider registry (default: defaultProviderRegistry). */
   providerRegistry?: ProviderRegistry;
   /** Node definitions saved canvases are validated against (default: the shipped registry). */
@@ -63,6 +79,14 @@ export type BackendOptions = {
   production?: boolean;
   /** Allow mockMode in canvas runs (default: !production) */
   allowMockMode?: boolean;
+  /** Redis pub/sub bus for realtime event streaming. */
+  bus?: RunEventBus;
+  /** Redis instance for reading sequence counters and state. */
+  redis?: Redis;
+  /** Ping interval for realtime SSE streams in ms (default: 15_000). */
+  pingIntervalMs?: number;
+  /** S3-compatible object storage for assets. */
+  storage?: ObjectStorage;
 };
 
 const ok = () => "ready" as const;
@@ -76,20 +100,29 @@ export function buildApp({
   webOrigin,
   agentRuns,
   canvasRuns = defaultCanvasRuns,
+  assetProbes = defaultAssetProbes,
   providerRegistry = defaultProviderRegistry,
   registry = defaultRegistry,
   production = false,
   allowMockMode = !production,
+  bus,
+  redis,
+  pingIntervalMs,
+  storage,
 }: BackendOptions) {
   const app = Fastify({
     logger,
     bodyLimit: 1024 * 1024,
     requestTimeout: 10000,
+    forceCloseConnections: true,
   }).withTypeProvider<ZodTypeProvider>();
   app.decorateRequest("identity");
 
   // First hook: nothing runs for a request the gateway did not sign.
   app.addHook("onRequest", verifyGatewayIdentity(internalSecret));
+  app.addHook("onClose", async () => {
+    await bus?.close();
+  });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.register(helmet, { contentSecurityPolicy: false });
@@ -133,6 +166,16 @@ export function buildApp({
       await webhookRoutes(webhookScope, db, providerRegistry, canvasRuns);
     });
 
+    // Realtime API: accepts Bearer JWT or realtime single-use ticket.
+    app.register(async (realtimeScope) => {
+      await realtimeRoutes(realtimeScope, {
+        db,
+        bus,
+        redis,
+        pingIntervalMs,
+      });
+    });
+
     // Business API: a valid gateway signature that vouches for a user is required.
     app.register(async (v1) => {
       v1.addHook("onRequest", requireUser);
@@ -141,6 +184,7 @@ export function buildApp({
       await projectRoutes(v1, db);
       await canvasRoutes(v1, db, registry);
       await canvasRunRoutes(v1, db, canvasRuns, allowMockMode);
+      await assetRoutes(v1, { db, storage, assetProbes });
     });
   });
   return app;

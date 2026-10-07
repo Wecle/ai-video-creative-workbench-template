@@ -13,6 +13,7 @@ export default defineConfig({
     "@creative/database",
     "@creative/observability",
     "@creative/providers",
+    "@creative/storage",
     // Constants and types only (never the workflow entry): see packages/workflows/README.md.
     "@creative/workflows",
   ],

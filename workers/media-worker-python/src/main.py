@@ -1,19 +1,36 @@
-from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Creative Media Worker", version="0.1.0")
+from fastapi import FastAPI, Response, status
 
-
-class TaskRequest(BaseModel):
-    task_id: str = Field(min_length=1)
-    parameters: dict[str, object] = Field(default_factory=dict)
+from src.worker import WorkerManager
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "media-worker"}
+def create_app(start_worker: bool = True) -> FastAPI:
+    worker_manager = WorkerManager()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if start_worker:
+            await worker_manager.start()
+        yield
+        if start_worker:
+            await worker_manager.stop()
+
+    app = FastAPI(title="Creative Media Worker", version="0.1.0", lifespan=lifespan)
+    app.state.worker_manager = worker_manager
+    app.state.start_worker = start_worker
+
+    @app.get("/health")
+    def health(response: Response) -> dict[str, str]:
+        if not app.state.start_worker:
+            return {"status": "ok", "service": "media-worker", "worker": "disabled"}
+        if app.state.worker_manager.is_ready:
+            return {"status": "ok", "service": "media-worker", "worker": "running"}
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "error", "service": "media-worker", "worker": "stopped"}
+
+    return app
 
 
-@app.post("/tasks/validate")
-def validate_task(task: TaskRequest) -> dict[str, object]:
-    return {"task_id": task.task_id, "valid": True, "mode": "validation-only"}
+app = create_app()

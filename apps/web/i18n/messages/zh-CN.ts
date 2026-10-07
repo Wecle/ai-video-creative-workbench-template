@@ -32,6 +32,14 @@ export const zhCN: DeepPartial<Messages> = {
     toolbar: {
       run: "运行画布",
       running: "运行中…",
+      uploadAsset: "上传资产",
+      uploading: "上传中…",
+    },
+    assets: {
+      uploadSuccess: "资产上传成功",
+      invalidType: "不支持的文件类型，请上传图片、视频或音频文件。",
+      fileTooLarge: "文件大小超过 100MB 限制。",
+      uploadFailed: "资产上传失败。",
     },
     node: {
       status: {

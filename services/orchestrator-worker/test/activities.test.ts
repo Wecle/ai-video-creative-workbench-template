@@ -211,5 +211,67 @@ describe("orchestrator-worker activities", () => {
         SELECT status FROM runs WHERE id = ${runId}`;
       expect(r2!.status).toBe("succeeded");
     });
+
+    it("loads ready asset and rejects non-ready or missing asset", async () => {
+      const activities = createActivities({
+        db,
+        registry: new ProviderRegistry(),
+      });
+
+      const [pendingAsset] = await client<{ id: string }[]>`
+        INSERT INTO assets (workspace_id, key, content_type, size_bytes, status)
+        VALUES (${workspaceId}, 'workspaces/w/assets/pending-1', 'image/png', 100, 'pending')
+        RETURNING id`;
+
+      const [readyAsset] = await client<{ id: string }[]>`
+        INSERT INTO assets (workspace_id, key, content_type, size_bytes, status)
+        VALUES (${workspaceId}, 'workspaces/w/assets/ready-1', 'image/jpeg', 200, 'ready')
+        RETURNING id`;
+
+      await expect(
+        activities.loadAsset({ assetId: randomUUID() }),
+      ).rejects.toThrow(/Asset not found/);
+
+      await expect(
+        activities.loadAsset({ assetId: pendingAsset!.id }),
+      ).rejects.toThrow(/Asset not ready/);
+
+      const loaded = await activities.loadAsset({ assetId: readyAsset!.id });
+      expect(loaded).toEqual({
+        assetKey: "workspaces/w/assets/ready-1",
+        contentType: "image/jpeg",
+        sizeBytes: 200,
+      });
+    });
+
+    it("saves asset metadata idempotently", async () => {
+      const activities = createActivities({
+        db,
+        registry: new ProviderRegistry(),
+      });
+
+      const [asset] = await client<{ id: string }[]>`
+        INSERT INTO assets (workspace_id, key, content_type, size_bytes, status)
+        VALUES (${workspaceId}, 'workspaces/w/assets/meta-1', 'image/png', 300, 'ready')
+        RETURNING id`;
+
+      const metadata = {
+        assetKey: "workspaces/w/assets/meta-1",
+        kind: "image",
+        contentType: "image/png",
+        sizeBytes: 300,
+        probedBy: "media-worker-python" as const,
+        pythonVersion: "3.12.0",
+      };
+
+      await activities.saveAssetMetadata({
+        assetId: asset!.id,
+        metadata,
+      });
+
+      const [row] = await client<{ metadata: Record<string, unknown> }[]>`
+        SELECT metadata FROM assets WHERE id = ${asset!.id}`;
+      expect(row!.metadata).toEqual(metadata);
+    });
   });
 });

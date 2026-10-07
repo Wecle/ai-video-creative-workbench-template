@@ -113,12 +113,20 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       MOCK_PROVIDER_WEBHOOK_SECRET: ${MOCK_PROVIDER_WEBHOOK_SECRET:-mock-provider-webhook-secret-key-32chars}
       ALLOW_MOCK_MODE: ${ALLOW_MOCK_MODE:-true}
+      S3_ENDPOINT: http://s3:8333
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:8333}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-creative-dev}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-creative-dev-secret-0123456789abcdef}
+      S3_BUCKET: ${S3_BUCKET:-creative-assets}
+      S3_CONFIGURE_CORS: ${S3_CONFIGURE_CORS:-true}
     ports:
       - "127.0.0.1:4001:4001"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      s3:
         condition: service_healthy
       temporal-namespace:
         condition: service_completed_successfully
@@ -147,6 +155,9 @@ services:
       REDIS_URL: redis://redis:6379
       WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN in .env (public origin of the web app)}
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:?Set INTERNAL_AUTH_SECRET in .env (openssl rand -base64 32)}
+      GATEWAY_TICKET_SECRET: ${GATEWAY_TICKET_SECRET:?Set GATEWAY_TICKET_SECRET in .env}
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:4000}
+      REALTIME_MAX_CONNECTION_SECONDS: ${REALTIME_MAX_CONNECTION_SECONDS:-3600}
       # Production mode requires it. Default: private ranges, which cover the Compose
       # network where the web container (Next rewrite) connects from.
       TRUST_PROXY: ${TRUST_PROXY:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
@@ -199,11 +210,14 @@ services:
         APP: "@creative/orchestrator-worker"
     environment:
       DATABASE_URL: postgresql://template:template@postgres:5432/template
+      REDIS_URL: redis://redis:6379
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
       MOCK_PROVIDER_WEBHOOK_SECRET: ${MOCK_PROVIDER_WEBHOOK_SECRET:-mock-provider-webhook-secret-key-32chars}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       temporal-namespace:
         condition: service_completed_successfully
@@ -218,8 +232,15 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.worker
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
     ports:
       - "127.0.0.1:4200:4200"
+    depends_on:
+      temporal-namespace:
+        condition: service_completed_successfully
+    stop_grace_period: 15s
     healthcheck:
       test:
         [
@@ -231,6 +252,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-creative-dev}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-creative-dev-secret-0123456789abcdef}
+      S3_BUCKET: ${S3_BUCKET:-creative-assets}
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   web:
     build:
@@ -260,3 +297,4 @@ services:
 
 volumes:
   postgres-data:
+  s3-data:

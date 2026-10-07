@@ -2,10 +2,20 @@
 name = "creative-media-worker"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.116.0,<1", "uvicorn[standard]>=0.35.0,<1", "pydantic>=2.11.0,<3"]
+dependencies = [
+    "fastapi>=0.116.0,<1",
+    "uvicorn[standard]>=0.35.0,<1",
+    "pydantic>=2.11.0,<3",
+    "temporalio>=1.9.0,<2",
+]
 
 [dependency-groups]
-dev = ["pytest>=8.4,<10", "httpx>=0.28,<1", "ruff>=0.12,<1"]
+dev = [
+    "pytest>=8.4,<10",
+    "httpx>=0.28,<1",
+    "ruff>=0.12,<1",
+    "jsonschema>=4.20.0,<5",
+]
 
 [tool.ruff]
 line-length = 100

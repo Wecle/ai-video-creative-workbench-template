@@ -86,6 +86,15 @@ export const en = {
       run: "Run",
       running: "Running…",
       exportJson: "Export JSON",
+      uploadAsset: "Upload asset",
+      uploading: "Uploading…",
+    },
+    assets: {
+      uploadSuccess: "Asset uploaded successfully",
+      invalidType:
+        "Unsupported file type. Please upload an image, video, or audio file.",
+      fileTooLarge: "File exceeds the 100MB size limit.",
+      uploadFailed: "Failed to upload asset.",
     },
     saveStatus: {
       saved: "Saved",

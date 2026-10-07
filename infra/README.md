@@ -22,7 +22,9 @@ The full stack publishes the web app on `http://localhost:3000`, Gateway on
 Temporal UI on `http://localhost:8080`, Temporal gRPC on `localhost:7233` and the
 Python Worker on `http://localhost:4200`. The Agent Runner publishes no port: it is
 a Temporal worker and reports health through a ready file. The web image bakes the internal Compose
-Gateway address into the Next.js rewrite during its production build.
+Gateway address into the Next.js rewrite during its production build. Full stack containers run
+in production mode (`NODE_ENV=production`), so `INTERNAL_AUTH_SECRET` and `GATEWAY_TICKET_SECRET`
+cannot use `dev-only` placeholders and must be generated with `openssl rand -base64 32`.
 
 Each compose file sets its own project name (`creative-dev` for `docker-compose.yml`,
 `creative-full` for `docker-compose.full.yml`), so `pnpm docker:down` only stops the full

@@ -3,31 +3,39 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema } from "@creative/database";
 import type { CanvasSnapshot } from "@creative/contracts";
 import type { ProviderRegistry } from "@creative/providers";
+import type { RunEventPublisher } from "./events";
+import { ApplicationFailure } from "@temporalio/activity";
 import type {
   ExecuteNodeInput,
   ExecuteNodeResult,
+  LoadAssetInput,
+  LoadAssetResult,
   OrchestratorActivities,
+  OrchestratorAssetActivities,
   PollJobInput,
   PollJobResult,
   RecordNodeRunCompletedInput,
   RecordNodeRunStartedInput,
   RunGraphData,
+  SaveAssetMetadataInput,
   UpdateRunStatusInput,
 } from "@creative/workflows/activities";
 
-const { runs, node_runs } = schema;
+const { runs, node_runs, assets } = schema;
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
 export interface ActivityContext {
   db: Database;
   registry: ProviderRegistry;
+  events?: RunEventPublisher;
 }
 
 export function createActivities({
   db,
   registry,
-}: ActivityContext): OrchestratorActivities {
+  events,
+}: ActivityContext): OrchestratorActivities & OrchestratorAssetActivities {
   return {
     async loadRunGraph(runId: string): Promise<RunGraphData> {
       const [run] = await db
@@ -88,6 +96,13 @@ export function createActivities({
             startedAt: new Date(),
           },
         });
+
+      await events?.publish({
+        type: "node.status",
+        runId: input.runId,
+        nodeId: input.nodeId,
+        status: "running",
+      });
     },
 
     async executeNode(input: ExecuteNodeInput): Promise<ExecuteNodeResult> {
@@ -197,6 +212,14 @@ export function createActivities({
             completedAt: new Date(),
           },
         });
+
+      await events?.publish({
+        type: "node.status",
+        runId: input.runId,
+        nodeId: input.nodeId,
+        status: input.status,
+        error: input.error ?? undefined,
+      });
     },
 
     async updateRunStatus(input: UpdateRunStatusInput): Promise<void> {
@@ -213,6 +236,51 @@ export function createActivities({
       }
 
       await db.update(runs).set(setObj).where(eq(runs.id, input.runId));
+
+      await events?.publish({
+        type: "run.status",
+        runId: input.runId,
+        status: input.status,
+        error: input.error ?? undefined,
+      });
+    },
+
+    async loadAsset(input: LoadAssetInput): Promise<LoadAssetResult> {
+      const [asset] = await db
+        .select()
+        .from(assets)
+        .where(eq(assets.id, input.assetId))
+        .limit(1);
+
+      if (!asset) {
+        throw ApplicationFailure.nonRetryable(
+          `Asset not found: ${input.assetId}`,
+          "AssetNotFound",
+        );
+      }
+
+      if (asset.status !== "ready") {
+        throw ApplicationFailure.nonRetryable(
+          `Asset not ready: ${input.assetId}`,
+          "AssetNotReady",
+        );
+      }
+
+      return {
+        assetKey: asset.key,
+        contentType: asset.contentType,
+        sizeBytes: asset.sizeBytes,
+      };
+    },
+
+    async saveAssetMetadata(input: SaveAssetMetadataInput): Promise<void> {
+      await db
+        .update(assets)
+        .set({
+          metadata: input.metadata,
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, input.assetId));
     },
   };
 }

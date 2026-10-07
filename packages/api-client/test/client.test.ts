@@ -280,5 +280,115 @@ describe("API client", () => {
         `/gateway/api/v1/projects/${projectId}/canvases/${canvasId}/runs/${runId}`,
       );
     });
+
+    it("createRealtimeTicket validates response and sends auth", async () => {
+      const runId = "11111111-1111-4111-8111-111111111111";
+      const ticketRes = {
+        ticket: "jwt-ticket-token",
+        expiresIn: 30,
+        baseUrl: "http://localhost:4000",
+      };
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json(ticketRes));
+      const api = createApiClient("/gateway", fetcher, {
+        getToken: async () => "user-token",
+      });
+
+      const result = await api.createRealtimeTicket(runId);
+      expect(result).toEqual(ticketRes);
+      expect(fetcher.mock.calls[0]![0]).toBe(
+        "/gateway/api/v1/realtime-tickets",
+      );
+      expect(fetcher.mock.calls[0]![1]?.method).toBe("POST");
+      expect(fetcher.mock.calls[0]![1]?.body).toBe(JSON.stringify({ runId }));
+      expect(authorizationOf(fetcher.mock.calls[0]!)).toBe("Bearer user-token");
+    });
+
+    it("asset endpoints validate response and send auth", async () => {
+      const assetId = "22222222-2222-4222-8222-222222222222";
+      const workspaceId = "33333333-3333-4333-8333-333333333333";
+      const uploadRes = {
+        asset: { id: assetId, status: "pending" },
+        upload: {
+          url: "http://storage.test/upload",
+          method: "PUT",
+          headers: { "content-type": "image/png" },
+          expiresIn: 300,
+        },
+      };
+      const assetSummary = {
+        id: assetId,
+        workspaceId,
+        key: `workspaces/${workspaceId}/assets/${assetId}`,
+        contentType: "image/png",
+        sizeBytes: 1024,
+        status: "ready",
+        metadata: null,
+        createdBy: null,
+        createdAt: "2026-10-07T00:00:00.000Z",
+        updatedAt: "2026-10-07T00:00:00.000Z",
+      };
+      const downloadRes = {
+        url: "http://storage.test/download",
+        expiresIn: 300,
+      };
+
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json(uploadRes))
+        .mockResolvedValueOnce(json({ asset: assetSummary }))
+        .mockResolvedValueOnce(json({ asset: assetSummary }))
+        .mockResolvedValueOnce(json(downloadRes));
+
+      const api = createApiClient("/gateway", fetcher, {
+        getToken: async () => "asset-token",
+      });
+
+      // 1. requestAssetUpload
+      const up = await api.requestAssetUpload({
+        workspaceId,
+        contentType: "image/png",
+        sizeBytes: 1024,
+      });
+      expect(up).toEqual(uploadRes);
+      expect(fetcher.mock.calls[0]![0]).toBe(
+        "/gateway/api/v1/assets/upload-url",
+      );
+
+      // 2. completeAsset
+      const comp = await api.completeAsset(assetId);
+      expect(comp.asset).toEqual(assetSummary);
+      expect(fetcher.mock.calls[1]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}/complete`,
+      );
+
+      // 3. getAsset
+      const got = await api.getAsset(assetId);
+      expect(got.asset).toEqual(assetSummary);
+      expect(fetcher.mock.calls[2]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}`,
+      );
+
+      // 4. getAssetDownloadUrl
+      const dl = await api.getAssetDownloadUrl(assetId);
+      expect(dl).toEqual(downloadRes);
+      expect(fetcher.mock.calls[3]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}/download-url`,
+      );
+
+      // 5. probeAsset
+      fetcher.mockResolvedValueOnce(
+        json({ queued: true, workflowId: `asset-probe:${assetId}` }),
+      );
+      const pr = await api.probeAsset(assetId);
+      expect(pr).toEqual({
+        queued: true,
+        workflowId: `asset-probe:${assetId}`,
+      });
+      expect(fetcher.mock.calls[4]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}/probe`,
+      );
+    });
   });
 });

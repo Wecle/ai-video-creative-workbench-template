@@ -71,6 +71,7 @@ wait_exited_ok() { # wait_exited_ok <one-shot service>
 }
 wait_healthy postgres
 wait_healthy redis
+wait_healthy s3
 wait_healthy temporal
 wait_exited_ok temporal-setup
 wait_exited_ok temporal-namespace

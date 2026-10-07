@@ -8,6 +8,7 @@
     "./constants": "./src/constants.ts",
     "./activities": "./src/activities.ts",
     "./dag": "./src/dag.ts",
+    "./media-probe": "./src/media-probe.ts",
     "./signals": "./src/signals.ts"
   },
   "scripts": {

@@ -26,6 +26,10 @@ if (!redis)
 const app = buildApp({
   backendUrl: config.backendUrl,
   internalSecret: config.internalSecret,
+  ticketSecret: config.ticketSecret,
+  gatewayPublicUrl: config.gatewayPublicUrl,
+  realtimeMaxConnectionSeconds: config.realtimeMaxConnectionSeconds,
+  webOrigin: config.webOrigin,
   trustProxy: config.trustProxy,
   jwt: { issuer: config.webOrigin, audience: AUTH_JWT_AUDIENCE },
   redis,

@@ -46,3 +46,15 @@ export async function requireUser(
   if (request.identity?.authType !== "jwt")
     return reply.code(401).send({ error: "Unauthorized" });
 }
+
+/** `onRequest` hook for realtime routes: accepts either jwt or ticket identity. */
+export async function requireUserOrTicket(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  if (
+    request.identity?.authType !== "jwt" &&
+    request.identity?.authType !== "ticket"
+  )
+    return reply.code(401).send({ error: "Unauthorized" });
+}

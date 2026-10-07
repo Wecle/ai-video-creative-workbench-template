@@ -4,6 +4,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 // from the package index so that node:crypto never reaches the web bundle).
 
 export const AUTH_JWT_AUDIENCE = "creative-gateway";
+export const REALTIME_TICKET_ISSUER = "creative-gateway";
+export const REALTIME_TICKET_AUDIENCE = "realtime";
+export const REALTIME_TICKET_TTL_SECONDS = 30;
 export const INTERNAL_HEADER_PREFIX = "x-internal-";
 
 export const INTERNAL_HEADERS = {
@@ -20,6 +23,7 @@ const SIGNATURE_BYTES = 32;
 
 export type InternalIdentity =
   | { authType: "jwt"; userId: string }
+  | { authType: "ticket"; userId: string }
   | { authType: "anonymous"; userId?: undefined };
 
 export type HeaderBag = Record<string, string | string[] | undefined>;
@@ -71,7 +75,10 @@ export function signInternalIdentity(input: {
 }): Record<string, string> {
   const { identity } = input;
   const userId = identity.userId ?? "";
-  if (identity.authType === "jwt" && !isValidInternalUserId(userId))
+  if (
+    (identity.authType === "jwt" || identity.authType === "ticket") &&
+    !isValidInternalUserId(userId)
+  )
     throw new Error("Invalid internal user id");
   const timestamp = String(input.nowSeconds ?? Math.floor(Date.now() / 1000));
   const signature = hmac(
@@ -125,12 +132,12 @@ export function verifyInternalIdentity(input: {
     userId === null
   )
     return { ok: false, reason: "malformed" };
-  if (authType !== "jwt" && authType !== "anonymous")
+  if (authType !== "jwt" && authType !== "ticket" && authType !== "anonymous")
     return { ok: false, reason: "malformed" };
   if (!TIMESTAMP_PATTERN.test(timestamp))
     return { ok: false, reason: "malformed" };
   if (
-    authType === "jwt" &&
+    (authType === "jwt" || authType === "ticket") &&
     (userId === undefined || !USER_ID_PATTERN.test(userId))
   )
     return { ok: false, reason: "malformed" };
@@ -162,7 +169,7 @@ export function verifyInternalIdentity(input: {
   return {
     ok: true,
     identity:
-      authType === "jwt"
+      authType === "jwt" || authType === "ticket"
         ? { authType, userId: userId as string }
         : { authType: "anonymous" },
   };
