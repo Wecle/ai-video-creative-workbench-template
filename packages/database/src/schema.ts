@@ -199,17 +199,29 @@ export const agent_runs = pgTable(
     id: uuid("id")
       .default(sql`pg_catalog.gen_random_uuid()`)
       .primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    canvasId: uuid("canvas_id")
+      .notNull()
+      .references(() => canvases.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    profileId: text("profile_id").notNull(),
     prompt: text("prompt").notNull(),
+    routeHints: jsonb("route_hints"),
+    canvasVersion: integer("canvas_version").notNull(),
+    canvasSnapshot: jsonb("canvas_snapshot").notNull(),
     status: text("status").default("running").notNull(),
-    state: jsonb("state").notNull(),
-    currentStep: integer("current_step").default(0).notNull(),
-    maxSteps: integer("max_steps").default(8).notNull(),
-    pendingApproval: jsonb("pending_approval"),
-    checkpointSequence: integer("checkpoint_sequence").default(0).notNull(),
-    workflowExecutionId: text("workflow_execution_id"),
+    outcome: text("outcome"),
+    state: jsonb("state").default({ steps: [], proposals: [] }).notNull(),
+    stateVersion: integer("state_version").default(0).notNull(),
+    workflowId: text("workflow_id").notNull(),
+    error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -220,7 +232,10 @@ export const agent_runs = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
+    index("agent_runs_workspace_id_idx").on(table.workspaceId),
     index("agent_runs_project_id_idx").on(table.projectId),
+    index("agent_runs_canvas_id_idx").on(table.canvasId),
+    index("agent_runs_created_by_idx").on(table.createdBy),
     index("agent_runs_status_idx").on(table.status),
   ],
 );
