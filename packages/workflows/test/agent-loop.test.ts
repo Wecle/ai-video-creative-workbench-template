@@ -6,6 +6,7 @@ import {
   type WorkflowBundle,
 } from "@temporalio/worker";
 import type { TestWorkflowEnvironment } from "@temporalio/testing";
+import { WorkflowNotFoundError } from "@temporalio/client";
 import { ApplicationFailure } from "@temporalio/workflow";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentContext, AgentMessage } from "@creative/agent-core/pure";
@@ -275,6 +276,7 @@ describe("agentLoopWorkflow", () => {
     const userId = "user-1";
     const toolCallId = "call-timeout";
     let llmStepCount = 0;
+    const progressRecords: RecordProgressActivityInput[] = [];
 
     const activities: AgentLoopActivities = {
       async buildContext() {
@@ -312,7 +314,9 @@ describe("agentLoopWorkflow", () => {
       async executeTool(): Promise<ExecuteToolActivityResult> {
         return { ok: true, summary: "Applied" };
       },
-      async recordProgress() {},
+      async recordProgress(input) {
+        progressRecords.push(input);
+      },
     };
 
     const taskQueue = `queue-${randomUUID()}`;
@@ -336,6 +340,10 @@ describe("agentLoopWorkflow", () => {
       outcome: "approval_timeout",
     });
     expect(llmStepCount).toBe(1);
+
+    const lastProgress = progressRecords[progressRecords.length - 1];
+    expect(lastProgress?.state.proposals).toHaveLength(1);
+    expect(lastProgress?.state.proposals[0]?.status).toBe("timeout");
   });
 
   it("approval waiting does not occupy worker and survives worker restart", async () => {
@@ -531,7 +539,7 @@ describe("agentLoopWorkflow", () => {
         toolCallId,
         decision: "approve",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(WorkflowNotFoundError);
   });
 
   it("finishes immediately when budget is exceeded or maxSteps is reached", async () => {
@@ -601,6 +609,65 @@ describe("agentLoopWorkflow", () => {
 
     expect(result.outcome).toBe("budget_exceeded");
     expect(proposed).toBe(false);
+
+    // maxSteps reached case
+    const runId2 = randomUUID();
+    const activitiesMaxSteps: AgentLoopActivities = {
+      async buildContext() {
+        return createDefaultContext({
+          policy: {
+            approvalThreshold: "write",
+            budget: {
+              maxSteps: 1,
+              maxEstimatedCredits: 100,
+              creditsPerKiloToken: 1,
+            },
+            approvalTimeoutMs: 1000,
+            maxToolCallsPerStep: 4,
+          },
+        });
+      },
+      async llmStep() {
+        return {
+          text: "Step with tool call",
+          toolCalls: [
+            {
+              toolCallId: "c_max",
+              toolName: "skill.load",
+              input: { name: "shot-list" },
+            },
+          ],
+          finishReason: "tool-calls",
+          usage: { totalTokens: 10 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "loaded" };
+      },
+      async recordProgress() {},
+    };
+
+    const taskQueue2 = `queue-${randomUUID()}`;
+    const worker2 = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue: taskQueue2,
+      workflowBundle,
+      activities: activitiesMaxSteps,
+    });
+
+    const result2 = await worker2.runUntil(
+      env.client.workflow.execute(AGENT_LOOP_WORKFLOW_TYPE, {
+        taskQueue: taskQueue2,
+        workflowId: agentLoopWorkflowId(userId, runId2),
+        args: [{ runId: runId2, userId }],
+      }),
+    );
+
+    expect(result2.status).toBe("completed");
+    expect(result2.outcome).toBe("max_steps");
   });
 
   it("handles prepareTool returning ok:false without proposing or waiting approval", async () => {
@@ -1186,5 +1253,266 @@ describe("agentLoopWorkflow", () => {
     const lastRecord = progressRecords[progressRecords.length - 1];
     expect(lastRecord?.status).toBe("failed");
     expect(lastRecord?.error).toBe("WORKFLOW_FAILED");
+  });
+
+  it("rejects tool that is known in system but not allowed in profile with tool_not_allowed", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    let step1Messages: AgentMessage[] = [];
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        // Profile only allows skill.load, not canvas.applyPatch
+        return createDefaultContext({
+          tools: [
+            {
+              name: "skill.load",
+              modelName: "skill_load",
+              risk: "read",
+            },
+          ],
+        });
+      },
+      async llmStep({ index, messages }: LlmStepActivityInput) {
+        if (index === 0) {
+          return {
+            text: "Attempting disallowed tool",
+            toolCalls: [
+              {
+                toolCallId: "call-disallowed",
+                toolName: "canvas.applyPatch",
+                input: {},
+              },
+            ],
+            finishReason: "tool-calls",
+            usage: { totalTokens: 10 },
+          };
+        }
+        step1Messages = [...messages];
+        return {
+          text: "Handled tool_not_allowed",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: { totalTokens: 10 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async recordProgress() {},
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    const result = await worker.runUntil(
+      env.client.workflow.execute(AGENT_LOOP_WORKFLOW_TYPE, {
+        taskQueue,
+        workflowId: agentLoopWorkflowId(userId, runId),
+        args: [{ runId, userId }],
+      }),
+    );
+
+    expect(result).toEqual({ status: "completed", outcome: "finished" });
+    const toolMessages = step1Messages.filter(
+      (m): m is Extract<AgentMessage, { role: "tool" }> => m.role === "tool",
+    );
+    expect(toolMessages).toHaveLength(1);
+    expect(
+      toolMessages[0]?.content[0]?.output.type === "error-text"
+        ? toolMessages[0]?.content[0]?.output.value
+        : "",
+    ).toContain("Tool call rejected: tool_not_allowed");
+  });
+
+  it("rejects duplicate toolCallId in subsequent step without creating duplicate proposals or executing tool (H1)", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    const toolCallId = "reused-tool-call-id";
+    let executeToolCount = 0;
+    const progressRecords: RecordProgressActivityInput[] = [];
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        return createDefaultContext();
+      },
+      async llmStep({ index }: LlmStepActivityInput) {
+        if (index === 0) {
+          return {
+            text: "Step 0 write tool",
+            toolCalls: [
+              {
+                toolCallId,
+                toolName: "canvas.applyPatch",
+                input: { summary: "patch 1", ops: [] },
+              },
+            ],
+            finishReason: "tool-calls",
+            usage: { totalTokens: 20 },
+          };
+        }
+        if (index === 1) {
+          // Reusing the same toolCallId
+          return {
+            text: "Step 1 reuses toolCallId",
+            toolCalls: [
+              {
+                toolCallId,
+                toolName: "canvas.applyPatch",
+                input: { summary: "patch 2", ops: [] },
+              },
+            ],
+            finishReason: "tool-calls",
+            usage: { totalTokens: 20 },
+          };
+        }
+        return {
+          text: "Finished",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: { totalTokens: 10 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async executeTool() {
+        executeToolCount++;
+        return { ok: true, summary: "executed" };
+      },
+      async recordProgress(input) {
+        progressRecords.push(input);
+      },
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    const handle = await env.client.workflow.start(AGENT_LOOP_WORKFLOW_TYPE, {
+      taskQueue,
+      workflowId: agentLoopWorkflowId(userId, runId),
+      args: [{ runId, userId }],
+    });
+
+    const executionPromise = worker.runUntil(handle.result());
+
+    while (!progressRecords.some((p) => p.status === "waiting_approval")) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    await handle.signal(agentApprovalSignal, {
+      toolCallId,
+      decision: "approve",
+    });
+
+    const result = await executionPromise;
+    expect(result).toEqual({ status: "completed", outcome: "finished" });
+
+    // executeTool was only called ONCE for the original tool call, not for the duplicate
+    expect(executeToolCount).toBe(1);
+
+    // Final proposals array has exactly 1 proposal, no duplicates
+    const finalProposals =
+      progressRecords[progressRecords.length - 1]?.state.proposals;
+    expect(finalProposals).toHaveLength(1);
+    expect(finalProposals?.[0]?.toolCallId).toBe(toolCallId);
+  });
+
+  it("records failed progress and publishes run.status when workflow is cancelled during waiting_approval (M-b)", async () => {
+    const runId = randomUUID();
+    const userId = "user-1";
+    const toolCallId = "call-cancel";
+    const progressRecords: RecordProgressActivityInput[] = [];
+
+    const activities: AgentLoopActivities = {
+      async buildContext() {
+        return createDefaultContext({
+          policy: {
+            approvalThreshold: "write",
+            budget: {
+              maxSteps: 5,
+              maxEstimatedCredits: 100,
+              creditsPerKiloToken: 1,
+            },
+            approvalTimeoutMs: 60_000,
+            maxToolCallsPerStep: 4,
+          },
+        });
+      },
+      async llmStep() {
+        return {
+          text: "Proposing patch",
+          toolCalls: [
+            {
+              toolCallId,
+              toolName: "canvas.applyPatch",
+              input: { summary: "patch", ops: [] },
+            },
+          ],
+          finishReason: "tool-calls",
+          usage: { totalTokens: 10 },
+        };
+      },
+      async prepareTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async executeTool() {
+        return { ok: true, summary: "ok" };
+      },
+      async recordProgress(input) {
+        progressRecords.push(input);
+      },
+    };
+
+    const taskQueue = `queue-${randomUUID()}`;
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities,
+    });
+
+    const handle = await env.client.workflow.start(AGENT_LOOP_WORKFLOW_TYPE, {
+      taskQueue,
+      workflowId: agentLoopWorkflowId(userId, runId),
+      args: [{ runId, userId }],
+    });
+
+    const executionPromise = worker.runUntil(handle.result());
+
+    while (!progressRecords.some((p) => p.status === "waiting_approval")) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    // Cancel workflow while waiting for approval
+    await handle.cancel();
+
+    // Execution should throw cancellation
+    await expect(executionPromise).rejects.toThrow();
+
+    // But recordProgress fallback ran via CancellationScope.nonCancellable
+    const failedProgress = progressRecords.find((p) => p.status === "failed");
+    expect(failedProgress).toBeDefined();
+    expect(failedProgress?.error).toBe("WORKFLOW_FAILED");
+    expect(failedProgress?.events).toContainEqual(
+      expect.objectContaining({
+        type: "agent.run.status",
+        status: "failed",
+        error: "WORKFLOW_FAILED",
+      }),
+    );
   });
 });

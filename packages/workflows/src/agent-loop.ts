@@ -1,4 +1,9 @@
-import { condition, proxyActivities, setHandler } from "@temporalio/workflow";
+import {
+  CancellationScope,
+  condition,
+  proxyActivities,
+  setHandler,
+} from "@temporalio/workflow";
 import type {
   AgentLoopOutcome,
   AgentLoopProposal,
@@ -30,6 +35,8 @@ export type AgentLoopWorkflowResult = {
   error?: string | null;
 };
 
+const KNOWN_TOOLS: readonly string[] = ["canvas.applyPatch", "skill.load"];
+
 const { buildContext } = proxyActivities<
   Pick<AgentLoopActivities, "buildContext">
 >({
@@ -42,7 +49,7 @@ const { llmStep } = proxyActivities<Pick<AgentLoopActivities, "llmStep">>({
   heartbeatTimeout: "30 seconds",
   retry: {
     maximumAttempts: 3,
-    nonRetryableErrorTypes: ["ModelRequestError"],
+    nonRetryableErrorTypes: ["ModelRequestError", "InvalidInput"],
   },
 });
 
@@ -50,14 +57,14 @@ const { prepareTool } = proxyActivities<
   Pick<AgentLoopActivities, "prepareTool">
 >({
   startToCloseTimeout: "30 seconds",
-  retry: { maximumAttempts: 2 },
+  retry: { maximumAttempts: 3 },
 });
 
 const { executeTool } = proxyActivities<
   Pick<AgentLoopActivities, "executeTool">
 >({
-  startToCloseTimeout: "2 minutes",
-  retry: { maximumAttempts: 2 },
+  startToCloseTimeout: "30 seconds",
+  retry: { maximumAttempts: 3 },
 });
 
 const { recordProgress } = proxyActivities<
@@ -82,6 +89,7 @@ export async function agentLoopWorkflow(
 
   const steps: AgentLoopStep[] = [];
   const proposals: AgentLoopProposal[] = [];
+  const seenToolCallIds = new Set<string>();
 
   try {
     const ctx = await buildContext({ runId });
@@ -219,6 +227,35 @@ export async function agentLoopWorkflow(
       for (let cIdx = 0; cIdx < stepResult.toolCalls.length; cIdx++) {
         const call = stepResult.toolCalls[cIdx]!;
 
+        if (seenToolCallIds.has(call.toolCallId)) {
+          const summary = `Duplicate tool call ID: ${call.toolCallId}`;
+          messages.push(
+            createToolResultMessage(call.toolCallId, call.toolName, {
+              type: "error-text",
+              value: summary,
+            }),
+          );
+          await recordProgress({
+            runId,
+            version: version++,
+            status: "running",
+            state: { steps, proposals },
+            events: [
+              {
+                type: "agent.tool.result",
+                runId,
+                seq: 1,
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                ok: false,
+                summary,
+              },
+            ],
+          });
+          continue;
+        }
+        seenToolCallIds.add(call.toolCallId);
+
         if (cIdx >= maxCalls) {
           const summary = "Too many tool calls in single step";
           messages.push(
@@ -276,11 +313,13 @@ export async function agentLoopWorkflow(
         }
 
         const toolMeta = ctx.tools.find((t) => t.name === call.toolName);
+        const isAllowed = toolMeta !== undefined;
+        const isKnown = isAllowed || KNOWN_TOOLS.includes(call.toolName);
         const callMeta: ToolCallMeta = {
           name: call.toolName,
           risk: toolMeta?.risk ?? "read",
-          known: toolMeta !== undefined,
-          allowed: toolMeta !== undefined,
+          known: isKnown,
+          allowed: isAllowed,
         };
 
         const decision = decideToolCall(
@@ -605,22 +644,24 @@ export async function agentLoopWorkflow(
     return { status: "completed", outcome: "max_steps" };
   } catch (err) {
     try {
-      await recordProgress({
-        runId,
-        version: version++,
-        status: "failed",
-        error: "WORKFLOW_FAILED",
-        state: { steps, proposals },
-        events: [
-          {
-            type: "agent.run.status",
-            runId,
-            seq: 1,
-            status: "failed",
-            error: "WORKFLOW_FAILED",
-          },
-        ],
-      });
+      await CancellationScope.nonCancellable(() =>
+        recordProgress({
+          runId,
+          version: version++,
+          status: "failed",
+          error: "WORKFLOW_FAILED",
+          state: { steps, proposals },
+          events: [
+            {
+              type: "agent.run.status",
+              runId,
+              seq: 1,
+              status: "failed",
+              error: "WORKFLOW_FAILED",
+            },
+          ],
+        }),
+      );
     } catch {
       // Ignore secondary error while recording progress
     }

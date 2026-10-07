@@ -372,6 +372,9 @@ importers:
         specifier: 'catalog:'
         version: 1.24.0
     devDependencies:
+      '@temporalio/client':
+        specifier: 'catalog:'
+        version: 1.24.0
       '@temporalio/testing':
         specifier: 'catalog:'
         version: 1.24.0(lightningcss@1.32.0)
