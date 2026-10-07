@@ -187,9 +187,17 @@ services:
       args:
         APP: "@creative/agent-runner"
     environment:
+      DATABASE_URL: postgresql://template:template@postgres:5432/template
+      REDIS_URL: redis://redis:6379
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
+      AGENT_MODEL: ${AGENT_MODEL:-mock}
+      AGENT_MOCK_CHUNK_DELAY_MS: ${AGENT_MOCK_CHUNK_DELAY_MS:-40}
     depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       temporal-namespace:
         condition: service_completed_successfully
     # Greater than the worker's shutdownGraceTime (10s).

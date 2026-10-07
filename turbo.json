@@ -32,7 +32,11 @@
         "S3_ACCESS_KEY",
         "S3_SECRET_KEY",
         "S3_BUCKET",
-        "S3_CONFIGURE_CORS"
+        "S3_CONFIGURE_CORS",
+        "AGENT_MODEL",
+        "AGENT_MOCK_CHUNK_DELAY_MS",
+        "AGENT_REGION",
+        "AGENT_SKILLS_DIR"
       ]
     },
     "build": {
@@ -59,7 +63,11 @@
         "S3_PUBLIC_ENDPOINT",
         "S3_ACCESS_KEY",
         "S3_SECRET_KEY",
-        "S3_BUCKET"
+        "S3_BUCKET",
+        "AGENT_MODEL",
+        "AGENT_MOCK_CHUNK_DELAY_MS",
+        "AGENT_REGION",
+        "AGENT_SKILLS_DIR"
       ],
       "passThroughEnv": ["DATABASE_URL", "TEMPORAL_CLI_PATH"]
     }
