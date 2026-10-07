@@ -9,6 +9,9 @@ export interface EventBusLike<TEvent> {
   ): Promise<() => void | Promise<void>>;
 }
 
+export type TerminalStatus =
+  string | { status: string; outcome?: string | null };
+
 export interface OpenRunStreamOptions<
   TEvent extends { seq: number; type: string },
   TSnapshot,
@@ -19,9 +22,9 @@ export interface OpenRunStreamOptions<
   seqKey: string;
   loadSnapshot: (seq0: number) => Promise<{
     snapshot: TSnapshot | null;
-    initialTerminalStatus?: string | null;
+    initialTerminalStatus?: TerminalStatus | null;
   }>;
-  isTerminalEvent?: (event: TEvent) => string | null | undefined;
+  isTerminalEvent?: (event: TEvent) => TerminalStatus | null | undefined;
   pingIntervalMs?: number;
   activeConnections?: Set<() => void>;
 }
@@ -100,13 +103,21 @@ export async function openRunStream<
     closeStream();
     if (!reply.sent) {
       reply.hijack();
+      reply.raw.destroy();
     }
     return;
   }
 
-  function finish(status: string) {
+  function finish(terminal: TerminalStatus) {
     if (ended) return;
-    stream.write(`event: done\ndata: ${JSON.stringify({ status })}\n\n`);
+    const payload =
+      typeof terminal === "string"
+        ? { status: terminal }
+        : {
+            status: terminal.status,
+            ...(terminal.outcome ? { outcome: terminal.outcome } : {}),
+          };
+    stream.write(`event: done\ndata: ${JSON.stringify(payload)}\n\n`);
     closeStream();
   }
 
@@ -131,6 +142,7 @@ export async function openRunStream<
       closeStream();
       if (!reply.sent) {
         reply.hijack();
+        reply.raw.destroy();
       }
       return;
     }
@@ -142,6 +154,7 @@ export async function openRunStream<
       closeStream();
       if (!reply.sent) {
         reply.hijack();
+        reply.raw.destroy();
       }
       return;
     }

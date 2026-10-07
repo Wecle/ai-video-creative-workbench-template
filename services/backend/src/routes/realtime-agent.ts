@@ -87,7 +87,10 @@ export async function realtimeAgentRoutes(
             evt.type === "agent.run.status" &&
             (evt.status === "completed" || evt.status === "failed")
           ) {
-            return evt.status;
+            return {
+              status: evt.status,
+              ...(evt.outcome ? { outcome: evt.outcome } : {}),
+            };
           }
           return null;
         },
@@ -108,9 +111,7 @@ export async function realtimeAgentRoutes(
           const currentRow = latestRun ?? runRow;
           const initialStatus = currentRow.status;
           const isTerminal =
-            initialStatus === "completed" ||
-            initialStatus === "failed" ||
-            initialStatus === "cancelled";
+            initialStatus === "completed" || initialStatus === "failed";
 
           return {
             snapshot: {
@@ -119,7 +120,14 @@ export async function realtimeAgentRoutes(
               seq: seq0,
               run: formatAgentLoopRun(currentRow),
             },
-            initialTerminalStatus: isTerminal ? initialStatus : null,
+            initialTerminalStatus: isTerminal
+              ? {
+                  status: initialStatus,
+                  ...(currentRow.outcome
+                    ? { outcome: currentRow.outcome }
+                    : {}),
+                }
+              : null,
           };
         },
       });

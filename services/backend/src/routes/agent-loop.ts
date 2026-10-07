@@ -16,7 +16,8 @@ import {
 } from "@creative/contracts";
 import { schema } from "@creative/database";
 import { agentLoopWorkflowId } from "@creative/workflows/constants";
-import { listProfileSummaries } from "@creative/agent-core/pure";
+import { getProfile, listProfileSummaries } from "@creative/agent-core";
+import { WorkflowNotFoundError } from "@temporalio/client";
 import { findAccessibleCanvas } from "../canvas/access";
 import { requireUser } from "../plugins/gateway-trust";
 import type { AgentLoopService } from "../temporal/agent-loops";
@@ -127,8 +128,14 @@ export async function agentLoopRoutes(
         });
       }
 
-      const runId = randomUUID();
       const profileId = body.profileId ?? "creative-assistant";
+      if (!getProfile(profileId)) {
+        return reply
+          .code(400)
+          .send({ error: `Unknown profile '${profileId}'` });
+      }
+
+      const runId = randomUUID();
       const workflowId = agentLoopWorkflowId(userId, runId);
       const routeHints = {
         selectedSkills: body.selectedSkills,
@@ -166,7 +173,7 @@ export async function agentLoopRoutes(
           .update(schema.agent_runs)
           .set({
             status: "failed",
-            outcome: "failed",
+            outcome: null,
             error: "Execution engine unavailable",
             completedAt: new Date(),
           })
@@ -226,14 +233,14 @@ export async function agentLoopRoutes(
 
   // 4. Submit approval decision
   app.post(
-    "/api/v1/agent/runs/:runId/approval",
+    "/api/v1/agent/runs/:runId/approvals",
     {
       onRequest: [requireUser],
       schema: {
         params: z.object({ runId: z.string().uuid() }),
         body: agentLoopApprovalRequestSchema,
         response: {
-          202: z.object({ ok: z.boolean() }),
+          202: z.object({ accepted: z.boolean() }),
           404: errorSchema,
           409: errorSchema,
           503: errorSchema,
@@ -266,12 +273,28 @@ export async function agentLoopRoutes(
         return reply.code(404).send({ error: "Run not found" });
       }
 
-      if (
-        runRow.status === "completed" ||
-        runRow.status === "failed" ||
-        runRow.status === "cancelled"
-      ) {
-        return reply.code(409).send({ error: "Run is already terminal" });
+      const state = (runRow.state ?? {}) as {
+        proposals?: AgentLoopProposal[];
+      };
+      const proposals = state.proposals ?? [];
+      const proposal = proposals.find((p) => p.toolCallId === toolCallId);
+
+      if (!proposal) {
+        return reply.code(409).send({ error: "Proposal not found" });
+      }
+
+      if (proposal.status !== "pending") {
+        const isDuplicateSameDecision =
+          (proposal.status === "approved" && decision === "approve") ||
+          (proposal.status === "rejected" && decision === "reject");
+        if (isDuplicateSameDecision) {
+          return reply.code(202).send({ accepted: true });
+        }
+        return reply.code(409).send({ error: "Proposal is not pending" });
+      }
+
+      if (runRow.status !== "waiting_approval") {
+        return reply.code(409).send({ error: "Run is not waiting approval" });
       }
 
       try {
@@ -279,8 +302,14 @@ export async function agentLoopRoutes(
           toolCallId,
           decision,
         });
-        return reply.code(202).send({ ok: true });
+        return reply.code(202).send({ accepted: true });
       } catch (error) {
+        if (
+          error instanceof WorkflowNotFoundError ||
+          (error as { name?: string })?.name === "WorkflowNotFoundError"
+        ) {
+          return reply.code(409).send({ error: "Workflow not found" });
+        }
         request.log.error(
           { err: error },
           "Failed to send approval signal to workflow",

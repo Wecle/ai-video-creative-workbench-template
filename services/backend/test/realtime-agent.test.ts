@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
+import { eq } from "drizzle-orm";
 import { Redis } from "ioredis";
 import { describe, expect, it, vi } from "vitest";
 import { agentEventsChannel, agentEventsSeqKey } from "@creative/contracts";
@@ -432,6 +433,372 @@ describe("backend realtime agent SSE streaming", () => {
           origClearInterval(t as NodeJS.Timeout);
         }
       }
+    } finally {
+      await close();
+      redis.disconnect();
+    }
+  });
+
+  it("returns 503 when redis or bus is not configured", async () => {
+    const { app, db, close } = createTestApp(dbUrl);
+    try {
+      const user = await createUserWithWorkspace(db, "no-bus-user");
+      const { projectId, canvasId } = await setupCanvas(
+        db,
+        user.userId,
+        user.workspaceId,
+      );
+      const [runRow] = await db
+        .insert(agent_runs)
+        .values({
+          workspaceId: user.workspaceId,
+          projectId,
+          canvasId,
+          createdBy: user.userId,
+          profileId: "creative-assistant",
+          prompt: "No bus test",
+          canvasVersion: 1,
+          canvasSnapshot: {},
+          status: "running",
+          workflowId: "wf-no-bus",
+        })
+        .returning();
+
+      const url = `/api/v1/realtime/agent/runs/${runRow!.id}/events`;
+      const res = await app.inject({
+        method: "GET",
+        url,
+        headers: signedHeaders("GET", url, {
+          authType: "jwt",
+          userId: user.userId,
+        }),
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toEqual({ error: "Realtime service unavailable" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("returns 404 for member of same workspace who is not creator, matching other 404s, and after creator removed", async () => {
+    const { app, db, close } = createTestApp(dbUrl);
+    try {
+      const owner = await createUserWithWorkspace(db, "owner-s2-rt");
+      const otherUser = await createUserWithWorkspace(db, "other-s2-rt");
+      const { projectId, canvasId } = await setupCanvas(
+        db,
+        owner.userId,
+        owner.workspaceId,
+      );
+
+      const peer = await createUserWithWorkspace(db, "peer-s2-rt");
+      await db.insert(schema.workspace_members).values({
+        workspace_id: owner.workspaceId,
+        userId: peer.userId,
+        role: "member",
+        createdAt: new Date(),
+      });
+
+      const [runRow] = await db
+        .insert(agent_runs)
+        .values({
+          workspaceId: owner.workspaceId,
+          projectId,
+          canvasId,
+          createdBy: owner.userId,
+          profileId: "creative-assistant",
+          prompt: "Iso test",
+          canvasVersion: 1,
+          canvasSnapshot: {},
+          status: "running",
+          workflowId: "wf-iso-rt",
+        })
+        .returning();
+
+      const url = `/api/v1/realtime/agent/runs/${runRow!.id}/events`;
+
+      const peerRes = await app.inject({
+        method: "GET",
+        url,
+        headers: signedHeaders("GET", url, {
+          authType: "jwt",
+          userId: peer.userId,
+        }),
+      });
+      expect(peerRes.statusCode).toBe(404);
+
+      const otherRes = await app.inject({
+        method: "GET",
+        url,
+        headers: signedHeaders("GET", url, {
+          authType: "jwt",
+          userId: otherUser.userId,
+        }),
+      });
+      expect(otherRes.statusCode).toBe(404);
+
+      expect(peerRes.json()).toEqual(otherRes.json());
+      expect(peerRes.json()).toEqual({ error: "Run not found" });
+
+      await db
+        .delete(schema.workspace_members)
+        .where(eq(schema.workspace_members.userId, owner.userId));
+
+      const removedCreatorRes = await app.inject({
+        method: "GET",
+        url,
+        headers: signedHeaders("GET", url, {
+          authType: "jwt",
+          userId: owner.userId,
+        }),
+      });
+      expect(removedCreatorRes.statusCode).toBe(404);
+      expect(removedCreatorRes.json()).toEqual({ error: "Run not found" });
+    } finally {
+      await close();
+    }
+  });
+
+  it("terminates cleanly on app.close() with active stream", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const agentBus = createAgentEventBus(subRedis);
+    const { app, db, close } = createTestApp(dbUrl, {
+      redis,
+      agentBus,
+    });
+    try {
+      const user = await createUserWithWorkspace(db, "active-close-user");
+      const { projectId, canvasId } = await setupCanvas(
+        db,
+        user.userId,
+        user.workspaceId,
+      );
+
+      const [runRow] = await db
+        .insert(agent_runs)
+        .values({
+          workspaceId: user.workspaceId,
+          projectId,
+          canvasId,
+          createdBy: user.userId,
+          profileId: "creative-assistant",
+          prompt: "Active stream close test",
+          canvasVersion: 1,
+          canvasSnapshot: {},
+          status: "running",
+          workflowId: "wf-active-close",
+        })
+        .returning();
+
+      await app.listen({ port: 0, host: "127.0.0.1" });
+      const address = app.server.address() as { port: number };
+
+      const urlPath = `/api/v1/realtime/agent/runs/${runRow!.id}/events`;
+      const headers = signedHeaders("GET", urlPath, {
+        authType: "jwt",
+        userId: user.userId,
+      });
+
+      const clientReq = http.request({
+        hostname: "127.0.0.1",
+        port: address.port,
+        path: urlPath,
+        method: "GET",
+        headers,
+      });
+
+      let receivedSnapshot = false;
+      clientReq.on("response", (res) => {
+        res.on("data", (chunk: Buffer) => {
+          if (chunk.toString().includes("event: snapshot")) {
+            receivedSnapshot = true;
+          }
+        });
+      });
+      clientReq.end();
+
+      await vi.waitFor(() => expect(receivedSnapshot).toBe(true));
+
+      // Close app while client stream is still open
+      await close();
+
+      expect(agentBus.listenerCount(runRow!.id)).toBe(0);
+    } finally {
+      redis.disconnect();
+    }
+  });
+
+  it("receives done event with outcome when agent.run.status completed is published via redis", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const agentBus = createAgentEventBus(subRedis);
+    const { app, db, close } = createTestApp(dbUrl, {
+      redis,
+      agentBus,
+    });
+    try {
+      const user = await createUserWithWorkspace(db, "terminal-outcome-user");
+      const { projectId, canvasId } = await setupCanvas(
+        db,
+        user.userId,
+        user.workspaceId,
+      );
+
+      const [runRow] = await db
+        .insert(agent_runs)
+        .values({
+          workspaceId: user.workspaceId,
+          projectId,
+          canvasId,
+          createdBy: user.userId,
+          profileId: "creative-assistant",
+          prompt: "Terminal outcome test",
+          canvasVersion: 1,
+          canvasSnapshot: {},
+          status: "running",
+          workflowId: "wf-terminal-outcome",
+        })
+        .returning();
+
+      const runId = runRow!.id;
+      const channel = agentEventsChannel(runId);
+      const seqKey = agentEventsSeqKey(runId);
+      await redis.set(seqKey, "1");
+
+      const url = `/api/v1/realtime/agent/runs/${runId}/events`;
+      const headers = signedHeaders("GET", url, {
+        authType: "jwt",
+        userId: user.userId,
+      });
+
+      const responsePromise = app.inject({
+        method: "GET",
+        url,
+        headers,
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      await redis.publish(
+        channel,
+        JSON.stringify({
+          type: "agent.run.status",
+          runId,
+          seq: 2,
+          status: "completed",
+          outcome: "finished",
+        }),
+      );
+
+      const response = await responsePromise;
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain("event: done");
+      expect(response.body).toContain('"status":"completed"');
+      expect(response.body).toContain('"outcome":"finished"');
+    } finally {
+      await close();
+      redis.disconnect();
+    }
+  });
+
+  it("filters buffered events by seq0 and delivers in monotonic order", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const agentBus = createAgentEventBus(subRedis);
+    const { app, db, close } = createTestApp(dbUrl, {
+      redis,
+      agentBus,
+    });
+    try {
+      const user = await createUserWithWorkspace(db, "buffer-order-user");
+      const { projectId, canvasId } = await setupCanvas(
+        db,
+        user.userId,
+        user.workspaceId,
+      );
+
+      const [runRow] = await db
+        .insert(agent_runs)
+        .values({
+          workspaceId: user.workspaceId,
+          projectId,
+          canvasId,
+          createdBy: user.userId,
+          profileId: "creative-assistant",
+          prompt: "Buffer order test",
+          canvasVersion: 1,
+          canvasSnapshot: {},
+          status: "running",
+          workflowId: "wf-buffer-order",
+        })
+        .returning();
+
+      const runId = runRow!.id;
+      const channel = agentEventsChannel(runId);
+      const seqKey = agentEventsSeqKey(runId);
+
+      await redis.set(seqKey, "2");
+
+      const url = `/api/v1/realtime/agent/runs/${runId}/events`;
+      const headers = signedHeaders("GET", url, {
+        authType: "jwt",
+        userId: user.userId,
+      });
+
+      const responsePromise = app.inject({
+        method: "GET",
+        url,
+        headers,
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Event with seq 1 should be ignored
+      await redis.publish(
+        channel,
+        JSON.stringify({
+          type: "agent.step.started",
+          runId,
+          seq: 1,
+          stepId: "s0",
+          index: 0,
+          attempt: 1,
+        }),
+      );
+
+      // Event with seq 3 should be received
+      await redis.publish(
+        channel,
+        JSON.stringify({
+          type: "agent.step.started",
+          runId,
+          seq: 3,
+          stepId: "s0",
+          index: 0,
+          attempt: 1,
+        }),
+      );
+
+      // Event with seq 4 terminal
+      await redis.publish(
+        channel,
+        JSON.stringify({
+          type: "agent.run.status",
+          runId,
+          seq: 4,
+          status: "completed",
+          outcome: "finished",
+        }),
+      );
+
+      const response = await responsePromise;
+      expect(response.statusCode).toBe(200);
+
+      expect(response.body).not.toContain("id: 1\n");
+      expect(response.body).toContain("id: 3\n");
+      expect(response.body).toContain("id: 4\n");
+      expect(response.body).toContain("event: done");
     } finally {
       await close();
       redis.disconnect();

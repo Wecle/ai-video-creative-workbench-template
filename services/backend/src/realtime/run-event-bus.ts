@@ -37,6 +37,8 @@ export function createGenericEventBus<TEvent>({
   parse,
 }: GenericEventBusOptions<TEvent>): GenericEventBus<TEvent> {
   const listenersById = new Map<string, Set<(event: TEvent) => void>>();
+  const activeChannels = new Set<string>();
+  const inFlightSubscribes = new Map<string, Promise<void>>();
 
   const onMessage = (ch: string, message: string) => {
     if (!ch.startsWith(prefix)) return;
@@ -75,16 +77,41 @@ export function createGenericEventBus<TEvent>({
       listener: (event: TEvent) => void,
     ): Promise<() => Promise<void>> {
       let set = listenersById.get(id);
-      const isFirst = !set || set.size === 0;
       if (!set) {
         set = new Set();
         listenersById.set(id, set);
       }
       set.add(listener);
 
-      if (isFirst) {
+      if (!activeChannels.has(id)) {
+        let inflight = inFlightSubscribes.get(id);
+        if (!inflight) {
+          inflight = (async () => {
+            try {
+              await subscriberRedis.subscribe(channel(id));
+              activeChannels.add(id);
+              const current = listenersById.get(id);
+              if (!current || current.size === 0) {
+                activeChannels.delete(id);
+                try {
+                  await subscriberRedis.unsubscribe(channel(id));
+                } catch {
+                  // Ignore unsubscribe errors
+                }
+              }
+            } catch (err) {
+              listenersById.delete(id);
+              activeChannels.delete(id);
+              throw err;
+            } finally {
+              inFlightSubscribes.delete(id);
+            }
+          })();
+          inFlightSubscribes.set(id, inflight);
+        }
+
         try {
-          await subscriberRedis.subscribe(channel(id));
+          await inflight;
         } catch (err) {
           set.delete(listener);
           if (set.size === 0) {
@@ -103,10 +130,13 @@ export function createGenericEventBus<TEvent>({
           currentSet.delete(listener);
           if (currentSet.size === 0) {
             listenersById.delete(id);
-            try {
-              await subscriberRedis.unsubscribe(channel(id));
-            } catch {
-              // Ignore unsubscribe errors on shutdown
+            if (activeChannels.has(id)) {
+              activeChannels.delete(id);
+              try {
+                await subscriberRedis.unsubscribe(channel(id));
+              } catch {
+                // Ignore unsubscribe errors on shutdown
+              }
             }
           }
         }
@@ -116,6 +146,8 @@ export function createGenericEventBus<TEvent>({
     async close(): Promise<void> {
       subscriberRedis.off("message", onMessage);
       listenersById.clear();
+      activeChannels.clear();
+      inFlightSubscribes.clear();
       try {
         await subscriberRedis.quit();
       } catch {
