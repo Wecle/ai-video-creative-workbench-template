@@ -8,6 +8,7 @@ import type {
 
 export type ScriptedMockModelOptions = {
   chunkDelayMs?: number;
+  chunkMode?: "words" | "single" | "multi50";
   onCall?: (callInfo: { prompt: unknown; tools: unknown }) => void;
 };
 
@@ -79,7 +80,7 @@ function findSmallestMissingK(promptText: string): number {
 export function createScriptedMockModel(
   options: ScriptedMockModelOptions = {},
 ): LanguageModelV4 {
-  const { chunkDelayMs = 0, onCall } = options;
+  const { chunkDelayMs = 0, chunkMode = "words", onCall } = options;
 
   async function resolveStream(
     callOptions: LanguageModelV4CallOptions,
@@ -186,15 +187,31 @@ export function createScriptedMockModel(
       { type: "stream-start", warnings: [] },
     ];
 
-    // Split text into words to simulate streaming chunks
-    const words = textOut.split(/(\s+)/);
-    parts.push({ type: "text-start", id: "t0" });
-    for (const w of words) {
-      if (w.length > 0) {
-        parts.push({ type: "text-delta", id: "t0", delta: w });
+    if (chunkMode === "single") {
+      parts.push({ type: "text-start", id: "t0" });
+      parts.push({ type: "text-delta", id: "t0", delta: textOut });
+      parts.push({ type: "text-end", id: "t0" });
+    } else if (chunkMode === "multi50") {
+      parts.push({ type: "text-start", id: "t0" });
+      let combined = "";
+      for (let i = 0; i < 50; i++) {
+        const chunk = `[chunk-${String(i).padStart(2, "0")}: This is chunk content with enough characters to pass 64] `;
+        combined += chunk;
+        parts.push({ type: "text-delta", id: "t0", delta: chunk });
       }
+      textOut = combined;
+      parts.push({ type: "text-end", id: "t0" });
+    } else {
+      // Split text into words to simulate streaming chunks
+      const words = textOut.split(/(\s+)/);
+      parts.push({ type: "text-start", id: "t0" });
+      for (const w of words) {
+        if (w.length > 0) {
+          parts.push({ type: "text-delta", id: "t0", delta: w });
+        }
+      }
+      parts.push({ type: "text-end", id: "t0" });
     }
-    parts.push({ type: "text-end", id: "t0" });
 
     if (toolCallOut) {
       parts.push({

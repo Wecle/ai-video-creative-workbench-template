@@ -11,9 +11,11 @@ export interface ModelResolver {
 
 export function createModelResolver(options?: {
   mockChunkDelayMs?: number;
+  mockChunkMode?: "words" | "single" | "multi50";
 }): ModelResolver {
   const mockModel = createScriptedMockModel({
     chunkDelayMs: options?.mockChunkDelayMs ?? 0,
+    chunkMode: options?.mockChunkMode,
   });
 
   return {
