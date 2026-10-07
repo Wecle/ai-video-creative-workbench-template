@@ -8,6 +8,16 @@ import { fileURLToPath } from "node:url";
 
 const webRoot = fileURLToPath(new URL("./apps/web/", import.meta.url));
 
+const agentCorePureFiles = [
+  "packages/agent-core/src/pure.ts",
+  "packages/agent-core/src/policy/**/*.ts",
+  "packages/agent-core/src/loop/**/*.ts",
+  "packages/agent-core/src/context/**/*.ts",
+  "packages/agent-core/src/router/**/*.ts",
+  "packages/agent-core/src/profiles/types.ts",
+  "packages/agent-core/src/tools/names.ts",
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -45,6 +55,11 @@ export default tseslint.config(
               message:
                 "Import a client subpath (better-auth/react, better-auth/client/plugins, better-auth/cookies); the root entry is server-side.",
             },
+            {
+              name: "ai",
+              message:
+                "Direct 'ai' imports are not allowed in web frontend. Use API client or backend routes.",
+            },
           ],
           patterns: [
             "@creative/database",
@@ -67,7 +82,6 @@ export default tseslint.config(
             "ioredis",
             "@creative/agent-core",
             "@creative/agent-core/*",
-            "ai",
             "@ai-sdk/*",
           ],
         },
@@ -108,15 +122,7 @@ export default tseslint.config(
   {
     // Agent-core pure code is deterministic and free of external dependencies.
     // Allow only relative imports (type imports are free).
-    files: [
-      "packages/agent-core/src/pure.ts",
-      "packages/agent-core/src/policy/**/*.ts",
-      "packages/agent-core/src/loop/**/*.ts",
-      "packages/agent-core/src/context/**/*.ts",
-      "packages/agent-core/src/router/**/*.ts",
-      "packages/agent-core/src/profiles/types.ts",
-      "packages/agent-core/src/tools/names.ts",
-    ],
+    files: agentCorePureFiles,
     rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",
@@ -149,6 +155,7 @@ export default tseslint.config(
       "packages/agent-core/src/runtime/**",
       "packages/agent-core/src/skills/runtime/**",
       "packages/agent-core/src/runtime.ts",
+      ...agentCorePureFiles,
     ],
     rules: {
       "@typescript-eslint/no-restricted-imports": [
@@ -156,7 +163,8 @@ export default tseslint.config(
         {
           patterns: [
             {
-              regex: "^(ai|@ai-sdk/.*|node:.*)$",
+              regex:
+                "^(ai|@ai-sdk/.*|node:.*|assert|async_hooks|buffer|child_process|cluster|console|constants|crypto|dgram|dns|domain|events|fs|fs/promises|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|timers|tls|tty|url|util|v8|vm|wasi|worker_threads|zlib)(/.*)?$",
               allowTypeImports: true,
               message:
                 "AI SDK and Node APIs are only allowed in runtime modules (@creative/agent-core/runtime).",
