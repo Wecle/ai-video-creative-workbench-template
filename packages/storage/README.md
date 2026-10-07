@@ -27,4 +27,3 @@ const storage = createS3Storage({
 
 - Configure bucket lifecycle rules (e.g. S3 Lifecycle Configuration) to automatically expire uncompleted multipart uploads and remove stale temporary objects.
 - In production, schedule a periodic background task to clean up orphan `pending` database records and unreferenced storage objects.
-

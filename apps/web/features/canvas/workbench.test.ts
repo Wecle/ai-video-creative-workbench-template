@@ -16,8 +16,12 @@ describe("resolveWorkspaceIdForProject", () => {
       ],
     };
 
-    expect(resolveWorkspaceIdForProject(cachedData, "proj-1")).toBe("ws-primary");
-    expect(resolveWorkspaceIdForProject(cachedData, "proj-2")).toBe("ws-secondary");
+    expect(resolveWorkspaceIdForProject(cachedData, "proj-1")).toBe(
+      "ws-primary",
+    );
+    expect(resolveWorkspaceIdForProject(cachedData, "proj-2")).toBe(
+      "ws-secondary",
+    );
   });
 
   it("returns undefined when project is not found", () => {
@@ -30,7 +34,9 @@ describe("resolveWorkspaceIdForProject", () => {
       ],
     };
 
-    expect(resolveWorkspaceIdForProject(cachedData, "proj-nonexistent")).toBeUndefined();
+    expect(
+      resolveWorkspaceIdForProject(cachedData, "proj-nonexistent"),
+    ).toBeUndefined();
   });
 
   it("returns undefined when cache data is undefined", () => {
