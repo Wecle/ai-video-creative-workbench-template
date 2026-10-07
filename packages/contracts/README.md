@@ -12,8 +12,8 @@
   - Agent 实时事件与流模式（`agentEventsChannel`, `agentEventsSeqKey`, `agentRunStatusEventSchema`, `agentStepStartedEventSchema`, `agentTextDeltaEventSchema`, `agentStepCompletedEventSchema`, `agentToolProposedEventSchema`, `agentToolDecidedEventSchema`, `agentToolResultEventSchema`, `agentEventSchema`, `agentSnapshotEventSchema`, `agentPingEventSchema`, `agentDoneEventSchema`, `agentStreamEventSchema`）
   - 实时票据模式（`realtimeTicketRequestSchema`, `realtimeTicketResponseSchema`）
 - `src/internal-auth.ts`：网关与后端内部签名通信契约（`signInternalIdentity`, `verifyInternalIdentity`，`x-internal-*` 头与 HMAC 签名）。
-- `src/assets.ts`：资产直传与就绪状态模式（`createDirectUploadRequestSchema`, `directUploadResponseSchema`, `createAssetRequestSchema`, `assetSummarySchema`）。
-- `src/tasks.ts`：异步任务与媒体探测信封模式（`taskEnvelopeSchema`, `mediaProbeTaskInputSchema`, `mediaProbeTaskOutputSchema`）。
-- `src/media.ts`：媒体元数据模式（`videoMetaSchema`, `imageMetaSchema`, `audioMetaSchema`）。
+- `src/assets.ts`：资产直传与就绪状态模式（`requestAssetUploadRequestSchema`, `requestAssetUploadResponseSchema`, `assetSummarySchema`, `getAssetResponseSchema`, `completeAssetResponseSchema`, `getAssetDownloadUrlResponseSchema`, `probeAssetResponseSchema` 等）。
+- `src/tasks.ts`：媒体任务请求与结果类型契约（`MediaTaskRequest`, `MediaTaskResult`）。
+- `src/media.ts`：媒体探测输入与结果模式（`mediaProbeInputSchema`, `mediaProbeResultSchema`）。
 - `src/events.ts`：通用领域事件基础类型（`DomainEvent`）。
-- `src/runtime.ts`：任务运行时状态类型（`TaskStatus`, `TaskHeartbeat`）。
+- `src/runtime.ts`：节点与画布运行时状态类型（`NodeRuntimeStatus`, `NodeRuntime`, `CanvasRuntime`）。
