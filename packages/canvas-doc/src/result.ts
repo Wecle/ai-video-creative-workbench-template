@@ -16,7 +16,8 @@ export type OpErrorCode =
   | "invalid-position"
   | "invalid-op"
   | "unknown-op"
-  | "unknown-edge";
+  | "unknown-edge"
+  | "invalid-patch";
 
 /** Operations never throw for business reasons; they return a code the UI can localize. */
 export type Result<T = void, C extends string = OpErrorCode> =
