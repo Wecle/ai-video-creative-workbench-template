@@ -2,7 +2,7 @@ import { GetBucketCorsCommand, S3Client } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 import { createMemoryStorage, createS3Storage } from "../src";
 
-const endpoint = process.env.S3_ENDPOINT || "http://127.0.0.1:8333";
+const endpoint = process.env.S3_ENDPOINT;
 const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || endpoint;
 const accessKeyId = process.env.S3_ACCESS_KEY || "creative-dev";
 const secretAccessKey =
@@ -44,8 +44,8 @@ describe("MemoryStorage", () => {
 
 describe.skipIf(!endpoint)("S3Storage Integration", () => {
   const storage = createS3Storage({
-    endpoint,
-    publicEndpoint,
+    endpoint: endpoint!,
+    publicEndpoint: publicEndpoint!,
     bucket,
     accessKeyId,
     secretAccessKey,
@@ -53,7 +53,7 @@ describe.skipIf(!endpoint)("S3Storage Integration", () => {
   });
 
   const rawClient = new S3Client({
-    endpoint,
+    endpoint: endpoint!,
     region: "us-east-1",
     credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: true,
