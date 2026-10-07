@@ -160,10 +160,13 @@ export async function llmStep(input: LlmStepInput): Promise<LlmStepResult> {
 
   let fullText = "";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let rawResult: any;
+  let rawToolCalls: any[] = [];
+  let finishReason = "stop";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let totalUsage: any;
 
   try {
-    rawResult = streamText({
+    const rawResult = streamText({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       model: model as any,
       system,
@@ -183,6 +186,10 @@ export async function llmStep(input: LlmStepInput): Promise<LlmStepResult> {
       }
     }
     batcher.flush();
+
+    rawToolCalls = (await rawResult.toolCalls) ?? [];
+    finishReason = (await rawResult.finishReason) ?? "stop";
+    totalUsage = await rawResult.totalUsage;
   } catch (err) {
     batcher.flush();
     console.error("LLM step stream error:", err);
@@ -190,16 +197,13 @@ export async function llmStep(input: LlmStepInput): Promise<LlmStepResult> {
   }
 
   // 4. Retrieve results
-  const rawToolCalls = (await rawResult.toolCalls) ?? [];
-  const finishReason = (await rawResult.finishReason) ?? "stop";
-  const totalUsage = await rawResult.totalUsage;
   const totalTokens =
     totalUsage?.totalTokens ?? Math.max(1, Math.ceil(fullText.length / 4));
 
   // 5. Normalize tool calls
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toolCalls: NormalizedToolCall[] = rawToolCalls.map((call: any) => {
-    const canonicalName = fromModelToolName(call.toolName);
+    const canonicalName = fromModelToolName(call.toolName, toolRegistry);
     const isInvalid = call.invalid === true;
     const errorMessage = isInvalid
       ? String(

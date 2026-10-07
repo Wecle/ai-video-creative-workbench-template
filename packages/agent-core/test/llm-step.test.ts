@@ -90,6 +90,73 @@ describe("llmStep and stream runtime", () => {
     expect(result.toolCalls[0]?.toolName).toBe("canvas.applyPatch");
   });
 
+  it("restores tool name with mixed dots and underscores like a.b_c through production llmStep path (M-e)", async () => {
+    const customTool = {
+      name: "a.b_c",
+      description: "Custom tool",
+      risk: "read" as const,
+      inputSchema: z.object({ query: z.string().optional() }),
+    };
+    const customProvider: ToolProvider = {
+      id: "custom",
+      kind: "builtin",
+      list: () => [customTool],
+      execute: async () => ({ ok: true, summary: "ok" }),
+    };
+    const customRegistry = createToolRegistry([customProvider]);
+
+    const customModel = {
+      specificationVersion: "v4" as const,
+      provider: "mock",
+      modelId: "mock",
+      supportedUrls: {},
+      async doStream() {
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({
+              type: "tool-call",
+              toolCallId: "call_abc_1",
+              toolName: "a_b_c",
+              input: JSON.stringify({ query: "test" }),
+            });
+            controller.enqueue({
+              type: "finish",
+              usage: {
+                inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 10, text: 10, reasoning: 0 },
+              },
+              finishReason: { unified: "tool-calls", raw: "tool-calls" },
+            });
+            controller.close();
+          },
+        });
+        return { stream };
+      },
+    };
+
+    const result = await llmStep({
+      runId: "run-custom",
+      stepId: "s0",
+      index: 0,
+      system: "System prompt",
+      messages: [{ role: "user", content: "Run a.b_c" }],
+      tools: [
+        {
+          name: "a.b_c",
+          modelName: "a_b_c",
+          risk: "read",
+        },
+      ],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      model: customModel as any,
+      toolRegistry: customRegistry,
+    });
+
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]?.toolName).toBe("a.b_c");
+  });
+
   it("identifies invalid tool inputs as invalid without throwing", async () => {
     // Model generates invalid input for a strict schema tool
     const strictTool = tool({

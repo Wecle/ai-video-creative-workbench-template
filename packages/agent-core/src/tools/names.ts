@@ -7,9 +7,6 @@ const defaultModelToCanonical = new Map<string, string>([
   ["skill_load", "skill.load"],
 ]);
 
-export function registerToolNameMapping(canonicalName: string): void {
-  defaultModelToCanonical.set(toModelToolName(canonicalName), canonicalName);
-}
 
 export type ToolNameLookup =
   | Iterable<string>
