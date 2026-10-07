@@ -20,5 +20,7 @@ export function workflowSource(
 }
 
 export function workflowsSourcePath(): string {
-  return createRequire(import.meta.url).resolve("@creative/workflows");
+  return createRequire(import.meta.url).resolve(
+    ["@creative", "workflows"].join("/"),
+  );
 }

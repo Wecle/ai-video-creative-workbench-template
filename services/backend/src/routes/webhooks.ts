@@ -21,6 +21,14 @@ export async function webhookRoutes(
   providerRegistry: ProviderRegistry,
   canvasRuns: CanvasRunService,
 ) {
+  // Encapsulated parser: only routes in this scope receive the raw Buffer body
+  instance.removeAllContentTypeParsers();
+  instance.addContentTypeParser(
+    "*",
+    { parseAs: "buffer" },
+    (_request, body: Buffer, done) => done(null, body),
+  );
+
   const app = instance.withTypeProvider<ZodTypeProvider>();
 
   app.post(
@@ -39,15 +47,10 @@ export async function webhookRoutes(
           .send({ error: `Provider ${provider} not found` });
       }
 
-      const rawBuffer =
-        (request as unknown as { rawBody?: Buffer }).rawBody ??
-        (Buffer.isBuffer(request.body)
-          ? request.body
-          : Buffer.from(
-              typeof request.body === "string"
-                ? request.body
-                : JSON.stringify(request.body ?? {}),
-            ));
+      const rawBuffer = Buffer.isBuffer(request.body) ? request.body : null;
+      if (!rawBuffer) {
+        return reply.code(400).send({ error: "Missing raw request body" });
+      }
 
       let parsed;
       try {
@@ -62,7 +65,7 @@ export async function webhookRoutes(
         return reply.code(400).send({ error: (error as Error).message });
       }
 
-      // Optimization: if node_run is already terminal in database, return 200 early
+      // Check existing node_run in database
       const [existingNodeRun] = await db
         .select({
           id: node_runs.id,
@@ -78,36 +81,41 @@ export async function webhookRoutes(
         )
         .limit(1);
 
+      // If job is not found yet in node_runs, return 409 so provider will retry
+      if (!existingNodeRun) {
+        return reply.code(409).send({
+          error: `External job ${parsed.externalId} not found or not registered yet, retry later`,
+        });
+      }
+
+      // Optimization: if node_run is already terminal in database, return 200 early
       if (
-        existingNodeRun &&
-        (existingNodeRun.status === "succeeded" ||
-          existingNodeRun.status === "failed")
+        existingNodeRun.status === "succeeded" ||
+        existingNodeRun.status === "failed"
       ) {
         return reply.code(200).send({ message: "already processed" });
       }
 
-      if (existingNodeRun) {
-        const [run] = await db
-          .select({ workflowId: runs.workflowId })
-          .from(runs)
-          .where(eq(runs.id, existingNodeRun.runId))
-          .limit(1);
+      const [run] = await db
+        .select({ workflowId: runs.workflowId })
+        .from(runs)
+        .where(eq(runs.id, existingNodeRun.runId))
+        .limit(1);
 
-        if (run) {
-          try {
-            await canvasRuns.sendCallbackSignal(run.workflowId, {
-              provider,
-              externalJobId: parsed.externalId,
-              status: parsed.status === "failed" ? "failed" : "succeeded",
-              output: parsed.output,
-              error: parsed.error,
-            });
-          } catch (err) {
-            request.log.warn(
-              { err, workflowId: run.workflowId },
-              "Failed to signal workflow (may have already completed)",
-            );
-          }
+      if (run) {
+        try {
+          await canvasRuns.sendCallbackSignal(run.workflowId, {
+            provider,
+            externalJobId: parsed.externalId,
+            status: parsed.status === "failed" ? "failed" : "succeeded",
+            output: parsed.output,
+            error: parsed.error,
+          });
+        } catch (err) {
+          request.log.warn(
+            { err, workflowId: run.workflowId },
+            "Failed to signal workflow (may have already completed)",
+          );
         }
       }
 

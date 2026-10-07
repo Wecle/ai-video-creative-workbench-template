@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { Worker } from "@temporalio/worker";
+import {
+  bundleWorkflowCode,
+  Worker,
+  type WorkflowBundle,
+} from "@temporalio/worker";
 import type { TestWorkflowEnvironment } from "@temporalio/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CanvasSnapshot } from "@creative/contracts";
@@ -15,7 +19,7 @@ import {
   CANVAS_DAG_WORKFLOW_TYPE,
   canvasRunWorkflowId,
 } from "../src/constants";
-import { providerCallbackSignal } from "../src/dag";
+import { providerCallbackSignal } from "../src/signals";
 import { createTemporalTestEnv } from "./helpers";
 
 const workflowsPath = fileURLToPath(
@@ -23,9 +27,15 @@ const workflowsPath = fileURLToPath(
 );
 
 let env: TestWorkflowEnvironment;
+let workflowBundle: WorkflowBundle;
+
 beforeAll(async () => {
   env = await createTemporalTestEnv();
+  workflowBundle = await bundleWorkflowCode({
+    workflowsPath,
+  });
 }, 120_000);
+
 afterAll(async () => {
   await env?.teardown();
 });
@@ -113,7 +123,7 @@ describe("canvasDagWorkflow", () => {
     const worker = await Worker.create({
       connection: env.nativeConnection,
       taskQueue,
-      workflowsPath,
+      workflowBundle,
       activities: { ...activities },
     });
 
@@ -187,7 +197,7 @@ describe("canvasDagWorkflow", () => {
     const worker = await Worker.create({
       connection: env.nativeConnection,
       taskQueue,
-      workflowsPath,
+      workflowBundle,
       activities: { ...activities },
     });
 
@@ -218,18 +228,114 @@ describe("canvasDagWorkflow", () => {
       provider: "mock",
       externalJobId: "job-cb-target",
       status: "succeeded",
-      output: { image: { url: "correct.png" } },
+      output: {
+        image: {
+          url: "https://mock.test/callback-img.png",
+          width: 1024,
+          height: 576,
+        },
+      },
     });
 
     const result = await executionPromise;
     expect(result).toEqual({ status: "succeeded" });
-    expect(nodeRunOutputs).toEqual({ image: { url: "correct.png" } });
+    expect(nodeRunOutputs).toEqual({
+      image: {
+        url: "https://mock.test/callback-img.png",
+        width: 1024,
+        height: 576,
+      },
+    });
   }, 20_000);
 
-  it("detects cycle or deadlock and fails", async () => {
+  it("consumes early callback signal that arrives before executeNode activity returns", async () => {
     const taskQueue = `orch-${randomUUID().slice(0, 8)}`;
     const runId = randomUUID();
     const canvasId = randomUUID();
+    const snapshot = createSampleSnapshot();
+    const workflowId = canvasRunWorkflowId(canvasId, runId);
+
+    let nodeRunOutputs: Record<string, unknown> | null = null;
+
+    const activities: OrchestratorActivities = {
+      loadRunGraph: async (): Promise<RunGraphData> => ({
+        runId,
+        canvasId,
+        projectId: randomUUID(),
+        canvasVersion: 1,
+        snapshot,
+        mockMode: "callback",
+      }),
+      recordNodeRunStarted: async () => {},
+      executeNode: async (input): Promise<ExecuteNodeResult> => {
+        if (input.nodeType === "text") {
+          return {
+            status: "succeeded",
+            outputs: { text: input.config.text },
+          };
+        }
+        // Simulate webhook callback arriving before executeNode activity completes:
+        // Signal the workflow right here from inside the activity!
+        const handle = env.client.workflow.getHandle(workflowId);
+        await handle.signal(providerCallbackSignal, {
+          provider: "mock",
+          externalJobId: "early-arrival-job",
+          status: "succeeded",
+          output: {
+            image: {
+              url: "https://early.arrival/img.png",
+              width: 512,
+              height: 512,
+            },
+          },
+        });
+
+        return {
+          status: "pending",
+          provider: "mock",
+          externalJobId: "early-arrival-job",
+          mode: "callback",
+        };
+      },
+      pollJob: async (): Promise<PollJobResult> => ({ status: "running" }),
+      recordNodeRunCompleted: async (input) => {
+        if (input.nodeId === "image-node") {
+          nodeRunOutputs = input.outputs ?? null;
+        }
+      },
+      updateRunStatus: async () => {},
+    };
+
+    const worker = await Worker.create({
+      connection: env.nativeConnection,
+      taskQueue,
+      workflowBundle,
+      activities: { ...activities },
+    });
+
+    const result = await worker.runUntil(
+      env.client.workflow.execute(CANVAS_DAG_WORKFLOW_TYPE, {
+        taskQueue,
+        workflowId,
+        args: [{ runId }],
+      }),
+    );
+
+    expect(result).toEqual({ status: "succeeded" });
+    expect(nodeRunOutputs).toEqual({
+      image: {
+        url: "https://early.arrival/img.png",
+        width: 512,
+        height: 512,
+      },
+    });
+  }, 20_000);
+
+  it("detects DAG cycle and fails fast with DAG_CYCLE_OR_DEADLOCK", async () => {
+    const taskQueue = `orch-${randomUUID().slice(0, 8)}`;
+    const runId = randomUUID();
+    const canvasId = randomUUID();
+
     const snapshot: CanvasSnapshot = {
       schemaVersion: 1,
       nodes: [
@@ -237,7 +343,7 @@ describe("canvasDagWorkflow", () => {
           id: "node-a",
           type: "text",
           version: 1,
-          title: "Node A",
+          title: "A",
           position: { x: 0, y: 0 },
           config: { text: "A" },
         },
@@ -245,7 +351,7 @@ describe("canvasDagWorkflow", () => {
           id: "node-b",
           type: "text",
           version: 1,
-          title: "Node B",
+          title: "B",
           position: { x: 100, y: 0 },
           config: { text: "B" },
         },
@@ -289,7 +395,7 @@ describe("canvasDagWorkflow", () => {
     const worker = await Worker.create({
       connection: env.nativeConnection,
       taskQueue,
-      workflowsPath,
+      workflowBundle,
       activities: { ...activities },
     });
 

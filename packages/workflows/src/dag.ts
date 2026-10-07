@@ -1,15 +1,17 @@
 import {
   ApplicationFailure,
   condition,
-  defineSignal,
   proxyActivities,
   setHandler,
   sleep,
 } from "@temporalio/workflow";
-import type {
-  OrchestratorActivities,
-  ProviderCallbackPayload,
-} from "./activities";
+import type { OrchestratorActivities } from "./activities";
+import {
+  providerCallbackSignal,
+  type ProviderCallbackPayload,
+} from "./signals";
+
+export { providerCallbackSignal, type ProviderCallbackPayload };
 
 const {
   loadRunGraph,
@@ -28,9 +30,6 @@ const {
   },
 });
 
-export const providerCallbackSignal =
-  defineSignal<[ProviderCallbackPayload]>("providerCallback");
-
 export type CanvasDagWorkflowInput = {
   runId: string;
 };
@@ -38,17 +37,36 @@ export type CanvasDagWorkflowInput = {
 export async function canvasDagWorkflow(
   input: CanvasDagWorkflowInput,
 ): Promise<{ status: "succeeded" | "failed" }> {
+  let currentNodeId: string | null = null;
   try {
     const graphData = await loadRunGraph(input.runId);
     await updateRunStatus({ runId: input.runId, status: "running" });
+
+    const MAX_EARLY_CALLBACKS = 100;
+    const earlyCallbacks = new Map<string, ProviderCallbackPayload>();
+
+    function cacheEarlyCallback(payload: ProviderCallbackPayload) {
+      if (earlyCallbacks.has(payload.externalJobId)) {
+        earlyCallbacks.delete(payload.externalJobId);
+      } else if (earlyCallbacks.size >= MAX_EARLY_CALLBACKS) {
+        const oldest = earlyCallbacks.keys().next().value;
+        if (oldest !== undefined) {
+          earlyCallbacks.delete(oldest);
+        }
+      }
+      earlyCallbacks.set(payload.externalJobId, payload);
+    }
 
     let waitingJobId: string | null = null;
     let receivedCallback: ProviderCallbackPayload | null = null;
 
     setHandler(providerCallbackSignal, (payload) => {
-      // Deduplication: only accept signal matching the currently waiting externalJobId
+      // Deduplication: if currently waiting for this specific job, resolve it
       if (waitingJobId !== null && payload.externalJobId === waitingJobId) {
         receivedCallback = payload;
+      } else {
+        // Cache early callback for when the node starts waiting
+        cacheEarlyCallback(payload);
       }
     });
 
@@ -95,6 +113,7 @@ export async function canvasDagWorkflow(
 
       const nodeId = readyQueue.shift()!;
       const node = nodesById.get(nodeId)!;
+      currentNodeId = node.id;
 
       const nodeInputs: Record<string, unknown> = {};
       for (const edge of incomingEdges.get(nodeId)!) {
@@ -136,6 +155,7 @@ export async function canvasDagWorkflow(
           provider: usedProvider,
           externalJobId: usedExternalJobId,
         });
+        currentNodeId = null;
         await updateRunStatus({
           runId: input.runId,
           status: "failed",
@@ -149,37 +169,46 @@ export async function canvasDagWorkflow(
         nodeOutputs = execResult.outputs;
       } else if (execResult.status === "pending") {
         if (execResult.mode === "callback") {
-          waitingJobId = execResult.externalJobId;
-          receivedCallback = null;
+          let callback: ProviderCallbackPayload | null = null;
 
-          const received = await condition(
-            () => receivedCallback !== null,
-            "5 minutes",
-          );
-          waitingJobId = null;
+          const cached = earlyCallbacks.get(execResult.externalJobId);
+          if (cached) {
+            earlyCallbacks.delete(execResult.externalJobId);
+            callback = cached;
+          } else {
+            waitingJobId = execResult.externalJobId;
+            receivedCallback = null;
 
-          if (!received || !receivedCallback) {
-            const err = "CALLBACK_TIMEOUT";
-            await recordNodeRunCompleted({
-              runId: input.runId,
-              nodeId: node.id,
-              status: "failed",
-              error: err,
-              provider: usedProvider,
-              externalJobId: usedExternalJobId,
-            });
-            await updateRunStatus({
-              runId: input.runId,
-              status: "failed",
-              error: err,
-            });
-            throw ApplicationFailure.create({
-              message: err,
-              nonRetryable: true,
-            });
+            const received = await condition(
+              () => receivedCallback !== null,
+              "5 minutes",
+            );
+            waitingJobId = null;
+
+            if (!received || !receivedCallback) {
+              const err = "CALLBACK_TIMEOUT";
+              await recordNodeRunCompleted({
+                runId: input.runId,
+                nodeId: node.id,
+                status: "failed",
+                error: err,
+                provider: usedProvider,
+                externalJobId: usedExternalJobId,
+              });
+              currentNodeId = null;
+              await updateRunStatus({
+                runId: input.runId,
+                status: "failed",
+                error: err,
+              });
+              throw ApplicationFailure.create({
+                message: err,
+                nonRetryable: true,
+              });
+            }
+            callback = receivedCallback;
           }
 
-          const callback: ProviderCallbackPayload = receivedCallback;
           if (callback.status === "failed") {
             const err = callback.error || "NODE_EXECUTION_FAILED";
             await recordNodeRunCompleted({
@@ -190,6 +219,7 @@ export async function canvasDagWorkflow(
               provider: usedProvider,
               externalJobId: usedExternalJobId,
             });
+            currentNodeId = null;
             await updateRunStatus({
               runId: input.runId,
               status: "failed",
@@ -227,6 +257,7 @@ export async function canvasDagWorkflow(
                 provider: usedProvider,
                 externalJobId: usedExternalJobId,
               });
+              currentNodeId = null;
               await updateRunStatus({
                 runId: input.runId,
                 status: "failed",
@@ -249,6 +280,7 @@ export async function canvasDagWorkflow(
               provider: usedProvider,
               externalJobId: usedExternalJobId,
             });
+            currentNodeId = null;
             await updateRunStatus({
               runId: input.runId,
               status: "failed",
@@ -270,6 +302,7 @@ export async function canvasDagWorkflow(
         provider: usedProvider,
         externalJobId: usedExternalJobId,
       });
+      currentNodeId = null;
 
       outputsByNode.set(node.id, nodeOutputs);
       completedCount++;
@@ -286,9 +319,16 @@ export async function canvasDagWorkflow(
     await updateRunStatus({ runId: input.runId, status: "succeeded" });
     return { status: "succeeded" };
   } catch (error) {
+    const message = error instanceof Error ? error.message : "WORKFLOW_FAILED";
+    if (currentNodeId) {
+      await recordNodeRunCompleted({
+        runId: input.runId,
+        nodeId: currentNodeId,
+        status: "failed",
+        error: message,
+      }).catch(() => undefined);
+    }
     if (!(error instanceof ApplicationFailure)) {
-      const message =
-        error instanceof Error ? error.message : "WORKFLOW_FAILED";
       await updateRunStatus({
         runId: input.runId,
         status: "failed",

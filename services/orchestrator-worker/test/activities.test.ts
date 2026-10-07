@@ -8,6 +8,13 @@ import { schema } from "@creative/database";
 import { MockProvider, ProviderRegistry } from "@creative/providers";
 import { createActivities, type Database } from "../src/activities";
 
+if (!process.env.TEST_DATABASE_URL) {
+  try {
+    process.loadEnvFile(new URL("../../../.env", import.meta.url));
+  } catch {
+    // ignore
+  }
+}
 const baseUrl = process.env.TEST_DATABASE_URL;
 
 describe("orchestrator-worker activities", () => {

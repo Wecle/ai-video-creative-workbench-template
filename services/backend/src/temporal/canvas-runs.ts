@@ -1,12 +1,14 @@
 import type { Client, Connection } from "@temporalio/client";
-import type { ProviderCallbackPayload } from "@creative/workflows/activities";
 import {
   CANVAS_DAG_WORKFLOW_TYPE,
   CANVAS_RUN_EXECUTION_TIMEOUT,
   ORCHESTRATOR_TASK_QUEUE,
   canvasRunWorkflowId,
 } from "@creative/workflows/constants";
-import { providerCallbackSignal } from "@creative/workflows";
+import {
+  providerCallbackSignal,
+  type ProviderCallbackPayload,
+} from "@creative/workflows/signals";
 
 const CALL_TIMEOUT_MS = 5000;
 

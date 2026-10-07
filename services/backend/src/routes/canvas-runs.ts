@@ -34,7 +34,7 @@ export async function canvasRunRoutes(
   instance: FastifyInstance,
   db: Database,
   canvasRuns: CanvasRunService,
-  production = false,
+  allowMockMode = true,
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const base = "/api/v1/projects/:projectId/canvases/:canvasId/runs";
@@ -57,12 +57,6 @@ export async function canvasRunRoutes(
       const { projectId, canvasId } = request.params;
       const { mockMode } = request.body;
 
-      if (production && mockMode) {
-        return reply
-          .code(400)
-          .send({ error: "mockMode is not allowed in production" });
-      }
-
       const canvas = await findAccessibleCanvas(
         db,
         request.identity.userId!,
@@ -80,6 +74,12 @@ export async function canvasRunRoutes(
         return reply.code(404).send({ error: "Canvas not found" });
       }
 
+      if (!allowMockMode && mockMode) {
+        return reply
+          .code(400)
+          .send({ error: "mockMode is not allowed in production" });
+      }
+
       const runId = randomUUID();
       const workflowId = canvasRunWorkflowId(canvasId, runId);
 
@@ -93,10 +93,8 @@ export async function canvasRunRoutes(
           createdBy: request.identity.userId!,
           status: "queued",
           canvasVersion: canvas.version,
-          snapshot: {
-            ...(canvas.snapshot as Record<string, unknown>),
-            mockMode,
-          },
+          snapshot: canvas.snapshot,
+          options: mockMode ? { mockMode } : {},
           workflowId,
         })
         .returning();

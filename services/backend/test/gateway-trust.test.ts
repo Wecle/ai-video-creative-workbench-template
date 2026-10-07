@@ -99,6 +99,19 @@ describe("backend trusts only the gateway", () => {
     );
   });
 
+  it("rejects JSON payloads containing __proto__ on normal routes with 400", async () => {
+    const path = "/api/v1/projects";
+    const headers = signedHeaders("POST", path, user);
+    headers["content-type"] = "application/json";
+    const response = await app.inject({
+      method: "POST",
+      url: path,
+      headers,
+      payload: '{"name":"test","__proto__":{"polluted":true}}',
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
   describe("/api/auth/*", () => {
     it("requires a signature everywhere except GET /api/auth/jwks", async () => {
       for (const [method, url] of [

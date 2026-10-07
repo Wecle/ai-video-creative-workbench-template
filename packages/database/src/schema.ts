@@ -108,6 +108,10 @@ export const runs = pgTable(
     status: text("status").default("queued").notNull(),
     canvasVersion: integer("canvas_version").notNull(),
     snapshot: jsonb("snapshot").notNull(),
+    options: jsonb("options")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
     workflowId: text("workflow_id").notNull(),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true })

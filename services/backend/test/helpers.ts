@@ -21,6 +21,13 @@ export const WEB_ORIGIN = "http://localhost:3000";
 
 /** Integration tests need Postgres; in CI a missing variable is a failure, not a skip. */
 export function testDatabaseUrl() {
+  if (!process.env.TEST_DATABASE_URL) {
+    try {
+      process.loadEnvFile(new URL("../../../.env", import.meta.url));
+    } catch {
+      // ignore
+    }
+  }
   const url = process.env.TEST_DATABASE_URL;
   if (!url && process.env.CI)
     throw new Error("TEST_DATABASE_URL is required in CI");

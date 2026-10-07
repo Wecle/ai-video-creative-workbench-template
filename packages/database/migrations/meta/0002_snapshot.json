@@ -415,6 +415,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "options": {
+          "name": "options",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
         "workflow_id": {
           "name": "workflow_id",
           "type": "text",

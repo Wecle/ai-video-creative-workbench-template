@@ -111,6 +111,8 @@ services:
       INTERNAL_AUTH_SECRET: ${INTERNAL_AUTH_SECRET:?Set INTERNAL_AUTH_SECRET in .env (openssl rand -base64 32)}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MOCK_PROVIDER_WEBHOOK_SECRET: ${MOCK_PROVIDER_WEBHOOK_SECRET:-mock-provider-webhook-secret-key-32chars}
+      ALLOW_MOCK_MODE: ${ALLOW_MOCK_MODE:-true}
     ports:
       - "127.0.0.1:4001:4001"
     depends_on:

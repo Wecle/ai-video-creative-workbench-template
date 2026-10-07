@@ -51,14 +51,19 @@ export function createActivities({
             }
           : ((snap?.snapshot ?? snap) as CanvasSnapshot);
 
+      const options = run.options as Record<string, unknown> | null;
+      const mockMode = (options?.mockMode ?? snap?.mockMode) as
+        "polling" | "callback" | undefined;
+      const region = (options?.region ?? snap?.region) as string | undefined;
+
       return {
         runId: run.id,
         canvasId: run.canvasId,
         projectId: run.projectId,
         canvasVersion: run.canvasVersion,
         snapshot,
-        mockMode: snap?.mockMode as "polling" | "callback" | undefined,
-        region: snap?.region as string | undefined,
+        mockMode,
+        region,
       };
     },
 

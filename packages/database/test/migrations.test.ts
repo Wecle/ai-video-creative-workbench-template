@@ -5,6 +5,13 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
+if (!process.env.TEST_DATABASE_URL) {
+  try {
+    process.loadEnvFile(new URL("../../.env", import.meta.url));
+  } catch {
+    // ignore
+  }
+}
 const baseUrl = process.env.TEST_DATABASE_URL;
 // In CI a missing variable must fail loudly instead of silently skipping.
 if (!baseUrl && process.env.CI)
@@ -60,7 +67,7 @@ describe.skipIf(!baseUrl)("migrations", () => {
             ('sessions', 'active_workspace_id'),
             ('canvases', 'yjs_state'), ('canvases', 'snapshot'),
             ('runs', 'snapshot'), ('runs', 'created_by'), ('runs', 'created_at'),
-            ('node_runs', 'provider'))`;
+            ('runs', 'options'), ('node_runs', 'provider'))`;
       const types = Object.fromEntries(
         columns.map((c) => [`${c.table_name}.${c.column_name}`, c.data_type]),
       );
@@ -73,6 +80,7 @@ describe.skipIf(!baseUrl)("migrations", () => {
         "canvases.yjs_state": "bytea",
         "canvases.snapshot": "jsonb",
         "runs.snapshot": "jsonb",
+        "runs.options": "jsonb",
         "runs.created_by": "uuid",
         "runs.created_at": "timestamp with time zone",
         "node_runs.provider": "text",

@@ -244,4 +244,26 @@ describe.skipIf(!databaseUrl)("webhooks (Postgres)", () => {
     // Should NOT have sent another signal
     expect(signaledWorkflows.length).toBe(signalCountBefore);
   });
+
+  it("returns 409 when externalJobId is not registered in database yet", async () => {
+    const unregisteredJobId = `mock-${randomUUID()}`;
+    const { rawBody, headers } = mockProvider.createWebhookPayload(
+      unregisteredJobId,
+      { status: "succeeded" },
+    );
+    const res = await callWebhook("mock", rawBody, headers);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toHaveProperty("error");
+  });
+
+  it("rejects request without raw request body with 400", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/webhooks/providers/mock",
+      headers: signedHeaders("POST", "/api/webhooks/providers/mock", {
+        authType: "anonymous",
+      }),
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });

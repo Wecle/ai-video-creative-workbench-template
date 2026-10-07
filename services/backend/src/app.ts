@@ -61,6 +61,8 @@ export type BackendOptions = {
   registry?: Registry;
   /** Production mode */
   production?: boolean;
+  /** Allow mockMode in canvas runs (default: !production) */
+  allowMockMode?: boolean;
 };
 
 const ok = () => "ready" as const;
@@ -77,6 +79,7 @@ export function buildApp({
   providerRegistry = defaultProviderRegistry,
   registry = defaultRegistry,
   production = false,
+  allowMockMode = !production,
 }: BackendOptions) {
   const app = Fastify({
     logger,
@@ -84,35 +87,6 @@ export function buildApp({
     requestTimeout: 10000,
   }).withTypeProvider<ZodTypeProvider>();
   app.decorateRequest("identity");
-
-  app.addContentTypeParser(
-    "application/json",
-    { parseAs: "buffer" },
-    (req, body: Buffer, done) => {
-      (req as unknown as { rawBody?: Buffer }).rawBody = body;
-      if (body.length === 0) {
-        done(null, null);
-        return;
-      }
-      try {
-        const json = JSON.parse(body.toString("utf8"));
-        done(null, json);
-      } catch (err: unknown) {
-        const error = err as Error & { statusCode?: number };
-        error.statusCode = 400;
-        done(error, undefined);
-      }
-    },
-  );
-
-  app.addContentTypeParser(
-    ["application/octet-stream", "text/plain"],
-    { parseAs: "buffer" },
-    (req, body: Buffer, done) => {
-      (req as unknown as { rawBody?: Buffer }).rawBody = body;
-      done(null, body);
-    },
-  );
 
   // First hook: nothing runs for a request the gateway did not sign.
   app.addHook("onRequest", verifyGatewayIdentity(internalSecret));
@@ -155,9 +129,9 @@ export function buildApp({
       return reply.code(503).send({ status: "not_ready", dependencies });
     });
     app.register(authRoutes, { auth, webOrigin });
-
-    // Webhooks API: external providers callback through gateway without Bearer token
-    await webhookRoutes(app, db, providerRegistry, canvasRuns);
+    app.register(async (webhookScope) => {
+      await webhookRoutes(webhookScope, db, providerRegistry, canvasRuns);
+    });
 
     // Business API: a valid gateway signature that vouches for a user is required.
     app.register(async (v1) => {
@@ -166,7 +140,7 @@ export function buildApp({
       await agentRunRoutes(v1, agentRuns);
       await projectRoutes(v1, db);
       await canvasRoutes(v1, db, registry);
-      await canvasRunRoutes(v1, db, canvasRuns, production);
+      await canvasRunRoutes(v1, db, canvasRuns, allowMockMode);
     });
   });
   return app;

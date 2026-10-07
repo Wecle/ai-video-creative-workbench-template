@@ -35,6 +35,7 @@ const app = buildApp({
   }),
   providerRegistry: defaultProviderRegistry,
   production: config.production,
+  allowMockMode: config.allowMockMode,
 });
 let closing = false;
 async function shutdown() {

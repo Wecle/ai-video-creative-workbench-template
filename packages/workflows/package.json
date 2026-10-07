@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
     "./activities": "./src/activities.ts",
-    "./dag": "./src/dag.ts"
+    "./dag": "./src/dag.ts",
+    "./signals": "./src/signals.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",

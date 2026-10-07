@@ -210,6 +210,13 @@ export async function startGateway(
 
 /** Integration tests need real Redis; in CI a missing variable is a failure, not a skip. */
 export function redisUrl() {
+  if (!process.env.REDIS_URL) {
+    try {
+      process.loadEnvFile(new URL("../../../.env", import.meta.url));
+    } catch {
+      // ignore
+    }
+  }
   const url = process.env.REDIS_URL;
   if (!url && process.env.CI) throw new Error("REDIS_URL is required in CI");
   return url;

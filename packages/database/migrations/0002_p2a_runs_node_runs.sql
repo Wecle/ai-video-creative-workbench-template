@@ -25,6 +25,7 @@ CREATE TABLE "runs" (
 	"status" text DEFAULT 'queued' NOT NULL,
 	"canvas_version" integer NOT NULL,
 	"snapshot" jsonb NOT NULL,
+	"options" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"workflow_id" text NOT NULL,
 	"error" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
