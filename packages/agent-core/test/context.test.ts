@@ -73,6 +73,72 @@ describe("buildContext", () => {
     expect(ctx.system).not.toContain('id: "node-105"');
   });
 
+  it("truncates long titles to 80 characters", () => {
+    const longTitle = "A".repeat(120);
+    const ctx = buildContext({
+      ...baseInput,
+      snapshot: {
+        nodes: [{ id: "n-long", type: "text", title: longTitle }],
+      },
+    });
+    expect(ctx.system).toContain(`title: "${"A".repeat(80)}"`);
+    expect(ctx.system).not.toContain("A".repeat(81));
+  });
+
+  it("escapes quotes and special characters in node id, type, and title with JSON.stringify", () => {
+    const ctx = buildContext({
+      ...baseInput,
+      snapshot: {
+        nodes: [
+          {
+            id: 'n"special',
+            type: "text",
+            title: 'Quote "hello" and backslash \\',
+          },
+        ],
+      },
+    });
+    expect(ctx.system).toContain('id: "n\\"special"');
+    expect(ctx.system).toContain('title: "Quote \\"hello\\" and backslash \\\\"');
+  });
+
+  it("filters skills by profile allowed skills", () => {
+    const ctxNoSkills = buildContext({
+      ...baseInput,
+      profile: {
+        ...creativeAssistantProfile,
+        skills: [],
+      },
+    });
+    expect(ctxNoSkills.system).not.toContain("Available Skills:");
+    expect(ctxNoSkills.system).not.toContain("Suggested Skills:");
+  });
+
+  it("does not leak SKILL.md body lines into system prompt (M6 progressive disclosure)", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const skillPath = path.resolve(
+      __dirname,
+      "../../../capabilities/skills/shot-list/SKILL.md",
+    );
+    const content = await fs.readFile(skillPath, "utf-8");
+    const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    const ctx = buildContext(baseInput);
+
+    // Title and description lines may match, but detailed body/workflow lines must not
+    const bodyLines = lines.filter(
+      (l) =>
+        !l.startsWith("#") &&
+        !l.includes("Turn story beat into numbered shot list"),
+    );
+
+    expect(bodyLines.length).toBeGreaterThan(0);
+    for (const line of bodyLines) {
+      expect(ctx.system).not.toContain(line);
+    }
+  });
+
   it("reflects profile swaps across system prompt and tools", () => {
     const customProfile = {
       ...creativeAssistantProfile,

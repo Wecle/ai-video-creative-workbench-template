@@ -8,7 +8,6 @@ export * from "./general";
 
 const PROFILES: Record<string, AgentProfile> = {
   [creativeAssistantProfile.id]: creativeAssistantProfile,
-  "creative-partner": { ...creativeAssistantProfile, id: "creative-partner" },
 };
 
 export function getProfile(id: string): AgentProfile | undefined {

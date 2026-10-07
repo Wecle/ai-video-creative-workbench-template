@@ -19,5 +19,5 @@ export function budgetExceeded(
   spent: number,
   budget: { maxEstimatedCredits: number },
 ): boolean {
-  return spent >= budget.maxEstimatedCredits;
+  return spent > budget.maxEstimatedCredits;
 }

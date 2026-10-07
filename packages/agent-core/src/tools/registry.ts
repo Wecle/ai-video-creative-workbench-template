@@ -6,6 +6,7 @@ export interface ToolRegistry {
   list(): readonly ToolDescriptor[];
   resolve(allowedTools: readonly string[]): ToolDescriptor[];
   getProvider(name: string): ToolProvider | undefined;
+  getCanonicalName(modelName: string): string | undefined;
 }
 
 export function createToolRegistry(
@@ -51,6 +52,9 @@ export function createToolRegistry(
     },
     getProvider(name: string): ToolProvider | undefined {
       return providerByToolName.get(name);
+    },
+    getCanonicalName(modelName: string): string | undefined {
+      return toolsByModelName.get(modelName);
     },
   };
 }

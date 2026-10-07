@@ -29,6 +29,7 @@ export type AgentContext = {
 };
 
 const MAX_SNAPSHOT_NODES = 100;
+const MAX_TITLE_LENGTH = 80;
 
 export function sanitizeTitle(title?: string): string {
   if (!title) return "";
@@ -41,7 +42,11 @@ export function sanitizeTitle(title?: string): string {
       result += title[i];
     }
   }
-  return result.trim();
+  const trimmed = result.trim();
+  if (trimmed.length > MAX_TITLE_LENGTH) {
+    return trimmed.slice(0, MAX_TITLE_LENGTH);
+  }
+  return trimmed;
 }
 
 export function buildContext(input: BuildContextInput): AgentContext {
@@ -54,8 +59,10 @@ export function buildContext(input: BuildContextInput): AgentContext {
   sections.push(profile.systemPrompt);
 
   // 2. Skills directory (progressive disclosure: names & descriptions only, NO skill content)
-  if (skills.length > 0) {
-    const skillLines = skills.map((s) => `- ${s.name}: ${s.description}`);
+  const allowedSkillsSet = new Set(profile.skills);
+  const profileSkills = skills.filter((s) => allowedSkillsSet.has(s.name));
+  if (profileSkills.length > 0) {
+    const skillLines = profileSkills.map((s) => `- ${s.name}: ${s.description}`);
     sections.push(`Available Skills:\n${skillLines.join("\n")}`);
   }
 
@@ -64,7 +71,10 @@ export function buildContext(input: BuildContextInput): AgentContext {
   const nodesToSummarize = snapshot.nodes.slice(0, MAX_SNAPSHOT_NODES);
   const nodeSummaries = nodesToSummarize.map((n) => {
     const cleanTitle = sanitizeTitle(n.title);
-    return `- id: "${n.id}", type: "${n.type}"${cleanTitle ? `, title: "${cleanTitle}"` : ""}`;
+    const idStr = JSON.stringify(n.id);
+    const typeStr = JSON.stringify(n.type);
+    const titlePart = cleanTitle ? `, title: ${JSON.stringify(cleanTitle)}` : "";
+    return `- id: ${idStr}, type: ${typeStr}${titlePart}`;
   });
 
   let canvasSummary = `Current Canvas Nodes (${totalNodes} total):\n${nodeSummaries.join("\n")}`;
@@ -76,9 +86,12 @@ export function buildContext(input: BuildContextInput): AgentContext {
   // 4. Routing hints (advisory)
   if (routeDecision) {
     const hints: string[] = [];
-    if (routeDecision.candidateSkills.length > 0) {
+    const validCandidateSkills = routeDecision.candidateSkills.filter((s) =>
+      allowedSkillsSet.has(s),
+    );
+    if (validCandidateSkills.length > 0) {
       hints.push(
-        `Suggested Skills: ${routeDecision.candidateSkills.join(", ")}`,
+        `Suggested Skills: ${validCandidateSkills.join(", ")}`,
       );
     }
     if (routeDecision.targetNodeIds.length > 0) {

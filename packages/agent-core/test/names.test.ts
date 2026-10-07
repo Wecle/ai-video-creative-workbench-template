@@ -50,4 +50,26 @@ describe("tool names and registry", () => {
       "Model tool name collision",
     );
   });
+
+  it("handles complex names with underscores and dots using registry lookup (S11)", () => {
+    const complexTool: ToolDescriptor = {
+      name: "a.b_c",
+      description: "Complex tool name test",
+      parameters: {},
+    };
+    const provider: ToolProvider = {
+      id: "p_complex",
+      kind: "builtin",
+      list: () => [complexTool],
+      execute: async () => ({ ok: true, summary: "ok" }),
+    };
+    const registry = createToolRegistry([provider]);
+    const modelName = toModelToolName("a.b_c");
+    expect(modelName).toBe("a_b_c");
+
+    // Naive replace would yield "a.b.c", but registry lookup yields canonical "a.b_c"
+    expect(fromModelToolName(modelName, registry)).toBe("a.b_c");
+    expect(registry.getCanonicalName(modelName)).toBe("a.b_c");
+  });
 });
+

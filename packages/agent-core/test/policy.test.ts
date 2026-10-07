@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  budgetExceeded,
   decideToolCall,
   estimateStepCost,
   type PolicyConfig,
@@ -135,4 +136,10 @@ describe("policy", () => {
       reason: "budget_exceeded",
     });
   });
+
+  it("checks budgetExceeded accurately", () => {
+    expect(budgetExceeded(100, { maxEstimatedCredits: 100 })).toBe(false);
+    expect(budgetExceeded(101, { maxEstimatedCredits: 100 })).toBe(true);
+  });
 });
+
