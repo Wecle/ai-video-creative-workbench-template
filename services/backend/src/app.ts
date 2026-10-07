@@ -21,12 +21,15 @@ import { sql } from "drizzle-orm";
 import type { Auth } from "./auth/auth";
 import { authRoutes } from "./auth/routes";
 import { requireUser, verifyGatewayIdentity } from "./plugins/gateway-trust";
+import type { Redis } from "ioredis";
 import { agentRunRoutes } from "./routes/agent-runs";
 import { canvasRoutes } from "./routes/canvases";
 import { canvasRunRoutes } from "./routes/canvas-runs";
 import { projectRoutes } from "./routes/projects";
 import { meRoutes, type Database } from "./routes/me";
+import { realtimeRoutes } from "./routes/realtime";
 import { webhookRoutes } from "./routes/webhooks";
+import type { RunEventBus } from "./realtime/run-event-bus";
 import type { AgentRunService } from "./temporal/agent-runs";
 import type { CanvasRunService } from "./temporal/canvas-runs";
 
@@ -63,6 +66,12 @@ export type BackendOptions = {
   production?: boolean;
   /** Allow mockMode in canvas runs (default: !production) */
   allowMockMode?: boolean;
+  /** Redis pub/sub bus for realtime event streaming. */
+  bus?: RunEventBus;
+  /** Redis instance for reading sequence counters and state. */
+  redis?: Redis;
+  /** Ping interval for realtime SSE streams in ms (default: 15_000). */
+  pingIntervalMs?: number;
 };
 
 const ok = () => "ready" as const;
@@ -80,16 +89,23 @@ export function buildApp({
   registry = defaultRegistry,
   production = false,
   allowMockMode = !production,
+  bus,
+  redis,
+  pingIntervalMs,
 }: BackendOptions) {
   const app = Fastify({
     logger,
     bodyLimit: 1024 * 1024,
     requestTimeout: 10000,
+    forceCloseConnections: true,
   }).withTypeProvider<ZodTypeProvider>();
   app.decorateRequest("identity");
 
   // First hook: nothing runs for a request the gateway did not sign.
   app.addHook("onRequest", verifyGatewayIdentity(internalSecret));
+  app.addHook("onClose", async () => {
+    await bus?.close();
+  });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.register(helmet, { contentSecurityPolicy: false });
@@ -131,6 +147,16 @@ export function buildApp({
     app.register(authRoutes, { auth, webOrigin });
     app.register(async (webhookScope) => {
       await webhookRoutes(webhookScope, db, providerRegistry, canvasRuns);
+    });
+
+    // Realtime API: accepts Bearer JWT or realtime single-use ticket.
+    app.register(async (realtimeScope) => {
+      await realtimeRoutes(realtimeScope, {
+        db,
+        bus,
+        redis,
+        pingIntervalMs,
+      });
     });
 
     // Business API: a valid gateway signature that vouches for a user is required.

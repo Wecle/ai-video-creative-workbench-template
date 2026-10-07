@@ -3,6 +3,7 @@ export interface WorkerConfig {
   temporalAddress: string;
   temporalNamespace: string;
   mockProviderWebhookSecret: string;
+  redisUrl?: string;
 }
 
 export function loadConfig(): WorkerConfig {
@@ -15,5 +16,6 @@ export function loadConfig(): WorkerConfig {
     mockProviderWebhookSecret:
       process.env.MOCK_PROVIDER_WEBHOOK_SECRET ||
       "mock-provider-webhook-secret-key-32chars",
+    redisUrl: process.env.REDIS_URL,
   };
 }

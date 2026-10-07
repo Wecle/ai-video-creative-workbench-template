@@ -53,6 +53,7 @@ describe("backend config", () => {
         ...env,
         NODE_ENV: "production",
         TEMPORAL_ADDRESS: "temporal:7233",
+        REDIS_URL: "redis://localhost:6379",
       }).production,
     ).toBe(true);
   });
@@ -74,9 +75,21 @@ describe("backend config", () => {
     });
   });
 
-  it("requires TEMPORAL_ADDRESS in production", () => {
-    expect(() => loadConfig({ ...env, NODE_ENV: "production" })).toThrow(
-      /TEMPORAL_ADDRESS is required in production/,
-    );
+  it("requires TEMPORAL_ADDRESS and REDIS_URL in production", () => {
+    expect(() =>
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        REDIS_URL: "redis://localhost:6379",
+      }),
+    ).toThrow(/TEMPORAL_ADDRESS is required in production/);
+
+    expect(() =>
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        TEMPORAL_ADDRESS: "temporal:7233",
+      }),
+    ).toThrow(/REDIS_URL is required in production/);
   });
 });

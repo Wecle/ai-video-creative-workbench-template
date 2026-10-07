@@ -104,6 +104,22 @@ export async function createTemporalTestEnv() {
   });
 }
 
+import type { Redis } from "ioredis";
+import type { RunEventBus } from "../src/realtime/run-event-bus";
+
+export function redisUrl() {
+  if (!process.env.REDIS_URL) {
+    try {
+      process.loadEnvFile(new URL("../../../.env", import.meta.url));
+    } catch {
+      // ignore
+    }
+  }
+  const url = process.env.REDIS_URL;
+  if (!url && process.env.CI) throw new Error("REDIS_URL is required in CI");
+  return url ?? "redis://localhost:6379";
+}
+
 /**
  * Backend wired to a real Better Auth instance. postgres-js connects lazily, so
  * without TEST_DATABASE_URL this still works for tests that never touch the database.
@@ -117,12 +133,18 @@ export function createTestApp(
     providerRegistry,
     registry,
     production,
+    bus,
+    redis,
+    pingIntervalMs,
   }: {
     agentRuns?: AgentRunService;
     canvasRuns?: CanvasRunService;
     providerRegistry?: ProviderRegistry;
     registry?: Registry;
     production?: boolean;
+    bus?: RunEventBus;
+    redis?: Redis;
+    pingIntervalMs?: number;
   } = {},
 ) {
   const database = createDatabase(databaseUrl);
@@ -142,6 +164,9 @@ export function createTestApp(
     providerRegistry,
     registry,
     production,
+    bus,
+    redis,
+    pingIntervalMs,
   });
   return {
     app,

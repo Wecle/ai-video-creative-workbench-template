@@ -3,6 +3,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema } from "@creative/database";
 import type { CanvasSnapshot } from "@creative/contracts";
 import type { ProviderRegistry } from "@creative/providers";
+import type { RunEventPublisher } from "./events";
 import type {
   ExecuteNodeInput,
   ExecuteNodeResult,
@@ -22,11 +23,13 @@ export type Database = PostgresJsDatabase<typeof schema>;
 export interface ActivityContext {
   db: Database;
   registry: ProviderRegistry;
+  events?: RunEventPublisher;
 }
 
 export function createActivities({
   db,
   registry,
+  events,
 }: ActivityContext): OrchestratorActivities {
   return {
     async loadRunGraph(runId: string): Promise<RunGraphData> {
@@ -88,6 +91,13 @@ export function createActivities({
             startedAt: new Date(),
           },
         });
+
+      await events?.publish({
+        type: "node.status",
+        runId: input.runId,
+        nodeId: input.nodeId,
+        status: "running",
+      });
     },
 
     async executeNode(input: ExecuteNodeInput): Promise<ExecuteNodeResult> {
@@ -197,6 +207,14 @@ export function createActivities({
             completedAt: new Date(),
           },
         });
+
+      await events?.publish({
+        type: "node.status",
+        runId: input.runId,
+        nodeId: input.nodeId,
+        status: input.status,
+        error: input.error ?? undefined,
+      });
     },
 
     async updateRunStatus(input: UpdateRunStatusInput): Promise<void> {
@@ -213,6 +231,13 @@ export function createActivities({
       }
 
       await db.update(runs).set(setObj).where(eq(runs.id, input.runId));
+
+      await events?.publish({
+        type: "run.status",
+        runId: input.runId,
+        status: input.status,
+        error: input.error ?? undefined,
+      });
     },
   };
 }

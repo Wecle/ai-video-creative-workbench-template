@@ -6,7 +6,9 @@ import { schema } from "@creative/database";
 import { MockProvider, ProviderRegistry } from "@creative/providers";
 import { startTelemetry } from "@creative/observability";
 import { ORCHESTRATOR_TASK_QUEUE } from "@creative/workflows/constants";
+import { Redis } from "ioredis";
 import { createActivities } from "./activities";
+import { createRunEventPublisher } from "./events";
 import { loadConfig } from "./config";
 import { workflowSource } from "./workflow-source";
 
@@ -17,6 +19,15 @@ const telemetry = startTelemetry("creative-orchestrator-worker");
 
 const sql = postgres(config.databaseUrl, { max: 5 });
 const db = drizzle(sql, { schema });
+
+const redis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+const events = createRunEventPublisher(redis);
 
 const registry = new ProviderRegistry();
 registry.register(new MockProvider(config.mockProviderWebhookSecret));
@@ -30,7 +41,7 @@ try {
     connection,
     namespace: config.temporalNamespace,
     taskQueue: ORCHESTRATOR_TASK_QUEUE,
-    activities: { ...createActivities({ db, registry }) },
+    activities: { ...createActivities({ db, registry, events }) },
     shutdownGraceTime: "10s",
     ...workflowSource(),
   });
@@ -42,6 +53,7 @@ try {
 } finally {
   rmSync(READY_FILE, { force: true });
   await connection?.close();
+  await redis?.quit();
   await sql.end({ timeout: 5 }).catch(() => undefined);
   await telemetry.shutdown();
 }

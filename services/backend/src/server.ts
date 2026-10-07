@@ -8,6 +8,9 @@ import { createTemporalAgentRuns } from "./temporal/agent-runs";
 import { createTemporalCanvasRuns } from "./temporal/canvas-runs";
 import { defaultProviderRegistry } from "@creative/providers";
 
+import { Redis } from "ioredis";
+import { createRunEventBus } from "./realtime/run-event-bus";
+
 const config = loadConfig();
 const telemetry = startTelemetry(
   process.env.OTEL_SERVICE_NAME ?? "creative-backend",
@@ -20,11 +23,32 @@ const temporalClient = new Client({
   connection: temporal,
   namespace: config.temporalNamespace,
 });
+
+const redis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+
+const subscriberRedis = config.redisUrl
+  ? new Redis(config.redisUrl, {
+      connectTimeout: 500,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    })
+  : undefined;
+
+const bus = subscriberRedis ? createRunEventBus(subscriberRedis) : undefined;
+
 const app = buildApp({
   auth,
   db: database.db,
   internalSecret: config.internalSecret,
   webOrigin: config.webOrigin,
+  bus,
+  redis,
   agentRuns: createTemporalAgentRuns({
     client: temporalClient,
     connection: temporal,
@@ -43,6 +67,7 @@ async function shutdown() {
   closing = true;
   try {
     await app.close();
+    await redis?.quit();
     await temporal.close();
     await database.close();
     await telemetry.shutdown();
