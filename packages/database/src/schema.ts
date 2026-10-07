@@ -192,3 +192,35 @@ export const assets = pgTable(
   },
   (table) => [index("assets_workspace_id_idx").on(table.workspaceId)],
 );
+
+export const agent_runs = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    prompt: text("prompt").notNull(),
+    status: text("status").default("running").notNull(),
+    state: jsonb("state").notNull(),
+    currentStep: integer("current_step").default(0).notNull(),
+    maxSteps: integer("max_steps").default(8).notNull(),
+    pendingApproval: jsonb("pending_approval"),
+    checkpointSequence: integer("checkpoint_sequence").default(0).notNull(),
+    workflowExecutionId: text("workflow_execution_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("agent_runs_project_id_idx").on(table.projectId),
+    index("agent_runs_status_idx").on(table.status),
+  ],
+);
