@@ -37,3 +37,30 @@ export const creativeAssistantProfile: AgentProfile = {
     },
   ],
 };
+
+export const readonlyAssistantProfile: AgentProfile = {
+  id: "readonly-assistant",
+  version: 1,
+  name: "Readonly Assistant",
+  description:
+    "An analytical reviewer that inspects the canvas without editing permissions.",
+  persona: "You are a concise canvas reviewer.",
+  systemPrompt:
+    "You inspect canvas structure and provide analytical feedback without making any changes.",
+  tools: ["skill.load"],
+  skills: [],
+  defaultModel: {
+    provider: "mock",
+    modelId: "scripted-1",
+  },
+  approval: {
+    threshold: "write",
+    timeoutSeconds: 600,
+  },
+  budget: {
+    maxSteps: 4,
+    maxEstimatedCredits: 100,
+    creditsPerKiloToken: 1,
+  },
+  starters: [],
+};

@@ -67,7 +67,7 @@ export function createSkillToolProvider(
       if (allowedSkillNames && !allowedSkillNames.includes(skillName)) {
         return {
           ok: false,
-          summary: `Skill '${skillName}' is not allowed for this profile`,
+          summary: `Skill '${skillName}' is not allowed for profile`,
           code: "skill_not_allowed",
         };
       }

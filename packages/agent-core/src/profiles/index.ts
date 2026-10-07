@@ -1,6 +1,9 @@
 import type { AgentProfileSummary } from "@creative/contracts";
 import type { AgentProfile } from "./types";
-import { creativeAssistantProfile } from "./general";
+import {
+  creativeAssistantProfile,
+  readonlyAssistantProfile,
+} from "./general";
 
 export * from "./types";
 export * from "./schema";
@@ -8,7 +11,12 @@ export * from "./general";
 
 const PROFILES: Record<string, AgentProfile> = {
   [creativeAssistantProfile.id]: creativeAssistantProfile,
+  [readonlyAssistantProfile.id]: readonlyAssistantProfile,
 };
+
+export function registerProfile(profile: AgentProfile): void {
+  PROFILES[profile.id] = profile;
+}
 
 export function getProfile(id: string): AgentProfile | undefined {
   return PROFILES[id];
