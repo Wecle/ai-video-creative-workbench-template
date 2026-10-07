@@ -212,3 +212,106 @@ export type StartCanvasRunResponse = z.infer<
   typeof startCanvasRunResponseSchema
 >;
 export type GetCanvasRunResponse = z.infer<typeof getCanvasRunResponseSchema>;
+
+export function toNodeRuntime(status: NodeRunStatus): import("./runtime").NodeRuntimeStatus {
+  switch (status) {
+    case "pending":
+      return "queued";
+    case "running":
+      return "running";
+    case "succeeded":
+      return "succeeded";
+    case "failed":
+    case "cancelled":
+      return "failed";
+  }
+}
+
+export function runEventsChannel(runId: string): string {
+  return `run-events:${runId}`;
+}
+
+export function runEventsSeqKey(runId: string): string {
+  return `run-events:${runId}:seq`;
+}
+
+export const runStatusEventSchema = z.strictObject({
+  type: z.literal("run.status"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  status: canvasRunStatusSchema,
+  error: z.string().nullable().optional(),
+});
+export type RunStatusEvent = z.infer<typeof runStatusEventSchema>;
+
+export const nodeStatusEventSchema = z.strictObject({
+  type: z.literal("node.status"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  nodeId: canvasIdSchema,
+  status: nodeRunStatusSchema,
+  error: z.string().nullable().optional(),
+});
+export type NodeStatusEvent = z.infer<typeof nodeStatusEventSchema>;
+
+export const runEventSchema = z.discriminatedUnion("type", [
+  runStatusEventSchema,
+  nodeStatusEventSchema,
+]);
+export type RunEvent = z.infer<typeof runEventSchema>;
+
+export const runSnapshotNodeSchema = z.strictObject({
+  nodeId: canvasIdSchema,
+  status: nodeRunStatusSchema,
+  error: z.string().nullable().optional(),
+});
+export type RunSnapshotNode = z.infer<typeof runSnapshotNodeSchema>;
+
+export const runSnapshotEventSchema = z.strictObject({
+  type: z.literal("snapshot"),
+  runId: z.string().uuid(),
+  seq: z.number().int().nonnegative(),
+  status: canvasRunStatusSchema,
+  error: z.string().nullable().optional(),
+  nodes: z.array(runSnapshotNodeSchema),
+});
+export type RunSnapshotEvent = z.infer<typeof runSnapshotEventSchema>;
+
+export const runPingEventSchema = z.strictObject({
+  type: z.literal("ping"),
+  seq: z.number().int().nonnegative(),
+});
+export type RunPingEvent = z.infer<typeof runPingEventSchema>;
+
+export const runDoneEventSchema = z.strictObject({
+  type: z.literal("done"),
+  status: canvasRunStatusSchema,
+});
+export type RunDoneEvent = z.infer<typeof runDoneEventSchema>;
+
+export const realtimeStreamEventSchema = z.discriminatedUnion("type", [
+  runSnapshotEventSchema,
+  runPingEventSchema,
+  runDoneEventSchema,
+  runStatusEventSchema,
+  nodeStatusEventSchema,
+]);
+export type RealtimeStreamEvent = z.infer<typeof realtimeStreamEventSchema>;
+
+export const realtimeTicketRequestSchema = z.strictObject({
+  runId: z.string().uuid(),
+});
+export type RealtimeTicketRequest = z.infer<typeof realtimeTicketRequestSchema>;
+
+export const realtimeTicketResponseSchema = z.strictObject({
+  ticket: z.string(),
+  expiresIn: z.number().int().positive(),
+  baseUrl: z.string().url(),
+});
+export type RealtimeTicketResponse = z.infer<
+  typeof realtimeTicketResponseSchema
+>;
+
+export * from "./assets";
+export * from "./media";
+
