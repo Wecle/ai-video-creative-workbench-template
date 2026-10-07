@@ -74,8 +74,9 @@ check "P3.3d unauthenticated request to /api/v1/agent/profiles -> 401" 401 \
   "$(curl -s -o /dev/null -w '%{http_code}' "$GATEWAY_URL/api/v1/agent/profiles")"
 
 # Record initial canvas snapshot
-api "$TOKEN_A" GET "$CPATH" >/dev/null
-CANVAS_SNAP_INIT=$(jq -c .canvas.snapshot "$BODY")
+api "$TOKEN_A" GET "$CPATH/snapshot" >/dev/null
+CANVAS_SNAP_INIT=$(jq -c .snapshot "$BODY")
+check "P3.3e initial snapshot is not null" true "$([ -n "$CANVAS_SNAP_INIT" ] && [ "$CANVAS_SNAP_INIT" != "null" ] && echo true || echo false)"
 
 # Non-member and invalid version checks
 echo "== Authorization & validation checks"
@@ -170,11 +171,12 @@ check "P3.16 SSE receives agent.text.delta" true "$has_delta"
 check "P3.17 SSE receives agent.tool.proposed" true "$has_proposal"
 
 # Pre-approval invariants: canvas snapshot & version unchanged, run waiting_approval
-api "$TOKEN_A" GET "$CPATH" >/dev/null
-CANVAS_VER_PRE=$(jq -r .canvas.version "$BODY")
-CANVAS_SNAP_PRE=$(jq -c .canvas.snapshot "$BODY")
+api "$TOKEN_A" GET "$CPATH/snapshot" >/dev/null
+CANVAS_VER_PRE=$(jq -r .version "$BODY")
+CANVAS_SNAP_PRE=$(jq -c .snapshot "$BODY")
 check "P3.18 canvas version unchanged before approval" "$CANVAS_VERSION" "$CANVAS_VER_PRE"
 check "P3.18b canvas snapshot unchanged before approval" "$CANVAS_SNAP_INIT" "$CANVAS_SNAP_PRE"
+check "P3.18c pre-approval snapshot is not null" true "$([ -n "$CANVAS_SNAP_PRE" ] && [ "$CANVAS_SNAP_PRE" != "null" ] && echo true || echo false)"
 
 api "$TOKEN_A" GET "/api/v1/agent/runs/$AGENT_RUN_ID" >/dev/null
 RUN_STATUS_PRE=$(jq -r .run.status "$BODY")
@@ -247,11 +249,12 @@ check "P3.26 run completed in backend" "completed" "$RUN_STATUS_POST"
 check "P3.27 run outcome is finished" "finished" "$RUN_OUTCOME_POST"
 
 # Server canvas version & snapshot remain unchanged (client applies patch)
-api "$TOKEN_A" GET "$CPATH" >/dev/null
-CANVAS_VER_POST=$(jq -r .canvas.version "$BODY")
-CANVAS_SNAP_POST=$(jq -c .canvas.snapshot "$BODY")
+api "$TOKEN_A" GET "$CPATH/snapshot" >/dev/null
+CANVAS_VER_POST=$(jq -r .version "$BODY")
+CANVAS_SNAP_POST=$(jq -c .snapshot "$BODY")
 check "P3.28 canvas version still unchanged on server" "$CANVAS_VERSION" "$CANVAS_VER_POST"
 check "P3.28b canvas snapshot still unchanged on server" "$CANVAS_SNAP_INIT" "$CANVAS_SNAP_POST"
+check "P3.28c post-approval snapshot is not null" true "$([ -n "$CANVAS_SNAP_POST" ] && [ "$CANVAS_SNAP_POST" != "null" ] && echo true || echo false)"
 
 # 2. Run 2: Rejection Flow
 echo "== Run 2: Rejection flow"
@@ -344,7 +347,7 @@ echo "== SSE heartbeat longevity check (>= 20s)"
 start_hb="$(mktemp)"
 jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
   '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke heartbeat test"}' > "$start_hb"
-api "$TOKEN_A" POST /api/v1/agent/runs "$start_hb" >/dev/null
+check "P3.38b start heartbeat run -> 202" 202 "$(api "$TOKEN_A" POST /api/v1/agent/runs "$start_hb")"
 rm -f "$start_hb"
 HB_RUN_ID=$(jq -r .run.id "$BODY")
 
@@ -363,6 +366,33 @@ check "P3.40 SSE received heartbeat ping" true "$(grep -q "event: ping" "$SSE_OU
 
 kill "$HB_PID" 2>/dev/null || true
 wait "$HB_PID" 2>/dev/null || true
+
+# Resolve heartbeat run so it doesn't linger in waiting_approval
+for attempt in $(seq 1 30); do
+  api "$TOKEN_A" GET "/api/v1/agent/runs/$HB_RUN_ID" >/dev/null
+  if [ "$(jq -r .run.status "$BODY")" = "waiting_approval" ]; then
+    HB_TOOL_CALL_ID=$(jq -r '.run.proposals[-1].toolCallId // empty' "$BODY")
+    if [ -n "$HB_TOOL_CALL_ID" ]; then
+      hb_resolve="$(mktemp)"
+      jq -n --arg tid "$HB_TOOL_CALL_ID" '{toolCallId: $tid, decision: "reject"}' > "$hb_resolve"
+      check "P3.41 reject heartbeat proposal -> 202" 202 "$(api "$TOKEN_A" POST "/api/v1/agent/runs/$HB_RUN_ID/approvals" "$hb_resolve")"
+      rm -f "$hb_resolve"
+      break
+    fi
+  fi
+  sleep 0.5
+done
+
+# Wait for run to finish
+for attempt in $(seq 1 30); do
+  api "$TOKEN_A" GET "/api/v1/agent/runs/$HB_RUN_ID" >/dev/null
+  HB_STATUS=$(jq -r .run.status "$BODY")
+  if [ "$HB_STATUS" = "completed" ] || [ "$HB_STATUS" = "failed" ]; then
+    break
+  fi
+  sleep 0.5
+done
+check "P3.42 heartbeat run completed" "completed" "$HB_STATUS"
 
 echo "== All smoke tests finished. Failures: $failures =="
 if [ "$failures" -gt 0 ]; then
