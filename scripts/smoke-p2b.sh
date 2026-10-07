@@ -85,9 +85,13 @@ RUN_ID=$(jq -r .run.id "$BODY")
 # 1. Realtime Ticket Authorization & Single-Use Checks
 echo "== Realtime ticket authorization"
 
-# User B tries to get ticket for User A's run -> 404
 ticket_req="$(mktemp)"; jq -n --arg id "$RUN_ID" '{runId: $id}' > "$ticket_req"
-check "P2b.5 User B cannot get ticket for User A run -> 404" 404 "$(api "$TOKEN_B" POST /api/v1/realtime-tickets "$ticket_req")"
+# Gateway signs ticket statelessly; User B receives ticket signed for User B
+check "P2b.5 User B gets ticket -> 200" 200 "$(api "$TOKEN_B" POST /api/v1/realtime-tickets "$ticket_req")"
+TICKET_B=$(jq -r .ticket "$BODY")
+# But backend enforces resource authorization at connection: User B cannot stream User A run -> 404
+HTTP_CODE_B=$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/runs/$RUN_ID/events?ticket=$TICKET_B")
+check "P2b.5b User B cannot stream User A run via ticket -> 404" 404 "$HTTP_CODE_B"
 
 # User A gets ticket for run -> 200
 check "P2b.6 User A gets ticket for run -> 200" 200 "$(api "$TOKEN_A" POST /api/v1/realtime-tickets "$ticket_req")"
