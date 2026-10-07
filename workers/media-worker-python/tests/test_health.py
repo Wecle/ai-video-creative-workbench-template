@@ -17,7 +17,7 @@ def test_health_worker_disabled():
     }
 
 
-def test_health_worker_running():
+def test_health_worker_not_connected_returns_503():
     app = create_app(start_worker=True)
 
     async def dummy_loop():
@@ -26,6 +26,32 @@ def test_health_worker_running():
     loop = asyncio.new_event_loop()
     task = loop.create_task(dummy_loop())
     app.state.worker_manager.task = task
+    app.state.worker_manager.is_connected = False
+
+    client = TestClient(app)
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "error",
+        "service": "media-worker",
+        "worker": "stopped",
+    }
+
+    task.cancel()
+    loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
+    loop.close()
+
+
+def test_health_worker_connected_and_running():
+    app = create_app(start_worker=True)
+
+    async def dummy_loop():
+        await asyncio.sleep(100)
+
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(dummy_loop())
+    app.state.worker_manager.task = task
+    app.state.worker_manager.is_connected = True
 
     client = TestClient(app)
     response = client.get("/health")

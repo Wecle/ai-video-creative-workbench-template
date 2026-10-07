@@ -25,7 +25,7 @@ def create_app(start_worker: bool = True) -> FastAPI:
     def health(response: Response) -> dict[str, str]:
         if not app.state.start_worker:
             return {"status": "ok", "service": "media-worker", "worker": "disabled"}
-        if app.state.worker_manager.is_running:
+        if app.state.worker_manager.is_ready:
             return {"status": "ok", "service": "media-worker", "worker": "running"}
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "service": "media-worker", "worker": "stopped"}
