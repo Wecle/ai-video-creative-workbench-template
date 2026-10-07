@@ -14,6 +14,8 @@ export type OpErrorCode =
   | "invalid-config"
   | "invalid-title"
   | "invalid-position"
+  | "invalid-op"
+  | "unknown-op"
   | "unknown-edge";
 
 /** Operations never throw for business reasons; they return a code the UI can localize. */
