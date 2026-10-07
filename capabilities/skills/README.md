@@ -1,5 +1,5 @@
 # Skills
 
-版本化创作 Skill 的内容目录。当前只保留边界说明，不包含业务 Skill。
+技能资产目录。每个 Skill 包含一个 `manifest.json` 与 `SKILL.md`。
 
-Skill Runtime 位于 packages/agent-core/src/skills/runtime，负责加载和执行；本目录只存放 Skill 定义、元数据和示例。
+- `shot-list`：将简短情节或脚本拆解为镜头清单并生成画布文本节点。

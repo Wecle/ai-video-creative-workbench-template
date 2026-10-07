@@ -5,14 +5,18 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./pure": "./src/pure.ts"
+    "./pure": "./src/pure.ts",
+    "./runtime": "./src/runtime.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/provider": "catalog:",
+    "@creative/canvas-doc": "workspace:*",
     "@creative/contracts": "workspace:*",
+    "ai": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
