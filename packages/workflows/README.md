@@ -7,11 +7,13 @@ Temporal workflow definitions: **deterministic code and contracts only**. Activi
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
 | `src/index.ts`      | Worker `workflowsPath` entry. Every function exported here is registered as a workflow.                  |
 | `src/echo.ts`       | `echoWorkflow`: calls the `runEcho` activity (30 s timeout, at most 3 attempts).                         |
-| `src/activities.ts` | Types only: `AgentActivities`, `EchoInput`, `EchoResult`. Imported by workflow and worker.               |
-| `src/constants.ts`  | Task queue, workflow type, `agentRunWorkflowId()`, pinned test CLI version. No imports, no runtime deps. |
+| `src/dag.ts`        | `canvasDagWorkflow`: executes canvas node graph with topological order and callback/polling support.     |
+| `src/media-probe.ts`| `mediaProbeWorkflow`: coordinates `loadAsset`, `media.probe` (Python), and `saveAssetMetadata`.           |
+| `src/activities.ts` | Types only: `AgentActivities`, `OrchestratorActivities`, `MediaActivities`, etc.                         |
+| `src/constants.ts`  | Task queues, workflow types, workflow-id helpers, pinned test CLI version.                                |
 
-Exports: `.` (workflows), `./constants`, `./activities`. Backend and agent-runner depend on this package; it depends on
-no other `@creative/*` runtime code.
+Exports: `.` (workflows), `./constants`, `./activities`, `./dag`, `./signals`, `./media-probe`.
+
 
 ## Determinism boundary (three layers)
 

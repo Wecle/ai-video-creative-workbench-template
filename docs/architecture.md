@@ -5,9 +5,8 @@
 - apps/web: Next.js App Router. Routes `/projects` and `/p/[id]/canvas/[cid]` (`/` redirects to `/projects`); React Flow canvas whose Zustand store (one per open canvas) is a read-only derivation of a Yjs document; node renderers and config forms mapped from the node registry; debounced saving with optimistic locking; cookie-based i18n (`en`, partial `zh-CN`, `en` fallback) that makes every page dynamic.
 - services/gateway: independently deployable public entry point; security headers, Redis-backed tiered rate limiting, Bearer JWT verification against the Backend JWKS (no database access), signed internal identity headers, and HTTP/SSE/WebSocket proxying through @fastify/http-proxy.
 - services/backend: independently deployable internal business API; Better Auth (email/password, optional Google, jwt and organization plugins) mounted at /api/auth/*, trusts only requests signed by the Gateway, `GET /api/v1/me`, projects and canvases (`GET/POST /api/v1/projects`, `GET /api/v1/projects/:projectId/canvases/:canvasId`, `PUT …/state`, `GET …/snapshot`), `POST /api/v1/agent-runs` and `GET /api/v1/agent-runs/:runId` (start and query the echo workflow through the Temporal Client), OpenAPI and domain route boundary.
-- services/agent-runner: Temporal worker (no HTTP port) serving the `agent` task queue; its activities run the Echo adapter. Production uses a prebuilt workflow bundle, development bundles workflows from source.
-- packages/workflows: Temporal workflow definitions (deterministic code and contracts only, lint- and bundler-enforced); `echoWorkflow`, task queue and workflow-id helpers. Activity implementations live in services/agent-runner.
-- workers/media-worker-python: separately started FastAPI service for health and task validation.
+- packages/workflows: Temporal workflow definitions (deterministic code and contracts only, lint- and bundler-enforced); `echoWorkflow`, `canvasDagWorkflow`, `mediaProbeWorkflow`, task queue and workflow-id helpers. Activity implementations live in services/agent-runner, services/orchestrator-worker, and workers/media-worker-python.
+- workers/media-worker-python: FastAPI service and Temporal worker serving the `media` task queue; implements the `media.probe` activity for media metadata extraction.
 - packages/node-registry: isomorphic node definitions (typed ports, zod config, optional cost estimate), two example nodes, `canConnect` port rules and the zod to JSON Schema output committed as `schemas/nodes.json` (a unit test fails on drift).
 - packages/canvas-doc: isomorphic Yjs document layer: document layout, operations (always with an explicit `user` or `agent` origin), connection validation (ports, duplicates, cycles), JSON snapshot, snapshot validation, `repairDocument`, undo history (`user` origin only) and state encoding. The only package that imports Yjs.
 - packages/contracts: browser-safe Zod contracts (including the strict canvas snapshot and project/canvas API schemas) and event/task/runtime types.
@@ -22,15 +21,15 @@ A canvas is stored as the full Yjs document state plus a JSON snapshot that the 
 
 Limits to know: saving overwrites the whole state (no update log, no compaction; tombstones grow with edit history); undo/redo is local to the open page; a repaired-away edge (see `repairDocument`) is not restored by redo; the viewport is not persisted.
 
-Signing in depends on PostgreSQL and Redis, and agent runs on Temporal (`pnpm infra:up` starts all three, then `pnpm db:migrate`); no model credentials are needed. Every request that reaches the Backend carries a Gateway signature (`x-internal-*` headers, HMAC with `INTERNAL_AUTH_SECRET`); the Backend answers 403 to anything unsigned, except `/health`, `/ready` and `GET /api/auth/jwks`. In P0a, realtime routes (`/api/v1/realtime/*`) accept only `Authorization: Bearer <JWT>`; short-lived tickets for browser EventSource/WebSocket clients are planned together with the realtime module. Gateway and Backend build into separate ESM entry points and can be released independently. Services bundle workspace source, while third-party dependencies remain installed runtime dependencies. Shared packages expose TypeScript source for workspace tooling; they are not npm distribution artifacts.
+Signing in depends on PostgreSQL and Redis, and agent runs on Temporal (`pnpm infra:up` starts PostgreSQL, Redis, S3 SeaweedFS, and Temporal, then `pnpm db:migrate`); no model credentials are needed. Every request that reaches the Backend carries a Gateway signature (`x-internal-*` headers, HMAC with `INTERNAL_AUTH_SECRET`); the Backend answers 403 to anything unsigned, except `/health`, `/ready` and `GET /api/auth/jwks`. Realtime routes (`/api/v1/realtime/runs/:runId/events`) accept either `Authorization: Bearer <JWT>` or single-use realtime tickets (`?ticket=...`) issued by Gateway (`POST /api/v1/realtime-tickets`). Gateway and Backend build into separate ESM entry points and can be released independently. Services bundle workspace source, while third-party dependencies remain installed runtime dependencies. Shared packages expose TypeScript source for workspace tooling; they are not npm distribution artifacts.
 
 ## Reserved boundaries
 
 The README-only directories have no package.json, process or implemented runtime. They stay inside the nearest subsystem until a real ownership or scaling need appears:
 
 - services/backend/modules/control-plane: project, canvas, asset and task use cases.
-- services/backend/modules/realtime: SSE/WebSocket event delivery, reconnect and replay.
-- services/backend/modules/webhooks: signature verification and idempotent provider callbacks.
+- services/backend/modules/realtime: SSE/WebSocket event delivery, reconnect and replay (active SSE run event stream implemented).
+- services/backend/modules/webhooks: signature verification and idempotent provider callbacks (active mock provider webhook implemented).
 - packages/domain: application rules.
 - packages/agent-core/src/policy: permission, budget, approval and safety decisions.
 - packages/agent-core/src/tools and src/skills: validated execution and versioned runtime boundaries.
@@ -42,11 +41,11 @@ Canvas/event/provider protocols can initially live in contracts. Extract them wh
 
 1. Identity is in place (Better Auth, JWT verified in the Gateway), and canvases are authorized by `workspace_members` (any member, no roles yet). Still to add: roles, authorization for the remaining resources, audit records, email verification, password reset and sign-up abuse protection. `/docs` is still public through the Gateway.
 2. Gateway rate limits are shared through Redis (fail-open when Redis is down; `TRUST_PROXY` must be set in production). Still to add: tenant/provider concurrency, quotas, queue fairness and admission control.
-3. Temporal is wired in (echo workflow, retry and timeout policy). Still to add: a `runs` table, idempotent database writes, cancellation and callback validation. Echo completion does not prove a durable Agent loop.
+3. Temporal is wired in (echo workflow, canvas DAG workflow, media probe workflow, retry and timeout policy). Still to add: approval gates and cancellation UI.
 4. Implement bounded Agent turns, context compaction, tool schemas, approval gates, skill/MCP isolation and replayable checkpoints.
-5. Add S3-compatible object storage adapters, upload restrictions, signed URLs and media scanning. Configure the `S3_*` environment variables after adding an adapter; provisioning storage and buckets is separate from the PostgreSQL/Redis development Compose stack.
+5. S3-compatible object storage (SeaweedFS in compose, `@creative/storage`) is integrated for asset uploads with presigned URLs, size and mime-type verification, and media probe analysis. Configure production `S3_*` environment variables when connecting to AWS S3, Cloudflare R2, or MinIO.
 6. Keep BFF routes and edge policy in services/gateway. The Next.js rewrite is transport plumbing, not authorization or domain orchestration.
 7. Define trace/log redaction, sampling, retention and cost metrics. Manual spans contain no prompt or credential payloads; the template provides no Collector or observability storage.
 8. Add integration/e2e tests for providers and extend the migrations and tests as tables are added. Review example schema and development credentials before reuse.
 
-The Python media worker is not connected to Temporal in this scaffold (it is not a Temporal worker). Define its transport and a versioned cross-language task protocol before enabling jobs (planned for P2).
+The Python media worker runs FastAPI and a Temporal worker listening on the `media` task queue, processing `media.probe` tasks with schemas aligned via shared JSON Schema contracts.
