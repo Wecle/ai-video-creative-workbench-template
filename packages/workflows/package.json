@@ -9,6 +9,7 @@
     "./activities": "./src/activities.ts",
     "./dag": "./src/dag.ts",
     "./media-probe": "./src/media-probe.ts",
+    "./agent-loop": "./src/agent-loop.ts",
     "./signals": "./src/signals.ts"
   },
   "scripts": {
@@ -16,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@creative/agent-core": "workspace:*",
     "@creative/contracts": "workspace:*",
     "@temporalio/workflow": "catalog:"
   },

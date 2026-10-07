@@ -134,3 +134,98 @@ export interface OrchestratorAssetActivities {
   loadAsset(input: LoadAssetInput): Promise<LoadAssetResult>;
   saveAssetMetadata(input: SaveAssetMetadataInput): Promise<void>;
 }
+
+import type {
+  AgentLoopOutcome,
+  AgentLoopProposal,
+  AgentLoopRunStatus,
+  AgentLoopStep,
+  AgentEvent,
+} from "@creative/contracts";
+import type {
+  AgentContext,
+  AgentMessage,
+  ToolMeta,
+} from "@creative/agent-core";
+
+export type BuildContextActivityInput = {
+  runId: string;
+};
+
+export type LlmStepActivityInput = {
+  runId: string;
+  stepId: string;
+  index: number;
+  system: string;
+  messages: AgentMessage[];
+  tools: ToolMeta[];
+};
+
+export type LlmStepActivityResult = {
+  text: string;
+  toolCalls: Array<{
+    toolCallId: string;
+    toolName: string;
+    input: Record<string, unknown>;
+    invalid?: { message: string };
+  }>;
+  finishReason: string;
+  usage: {
+    totalTokens: number;
+  };
+};
+
+export type PrepareToolActivityInput = {
+  runId: string;
+  toolCall: {
+    toolCallId: string;
+    toolName: string;
+    input: Record<string, unknown>;
+  };
+};
+
+export type PrepareToolActivityResult = {
+  ok: boolean;
+  code?: string;
+  summary: string;
+};
+
+export type ExecuteToolActivityInput = {
+  runId: string;
+  toolCall: {
+    toolCallId: string;
+    toolName: string;
+    input: Record<string, unknown>;
+  };
+};
+
+export type ExecuteToolActivityResult = {
+  ok: boolean;
+  summary: string;
+  patch?: unknown;
+};
+
+export type RecordProgressActivityInput = {
+  runId: string;
+  version: number;
+  status: AgentLoopRunStatus;
+  outcome?: AgentLoopOutcome | null;
+  error?: string | null;
+  state: {
+    steps: AgentLoopStep[];
+    proposals: AgentLoopProposal[];
+  };
+  events: AgentEvent[];
+};
+
+export interface AgentLoopActivities {
+  buildContext(input: BuildContextActivityInput): Promise<AgentContext>;
+  llmStep(input: LlmStepActivityInput): Promise<LlmStepActivityResult>;
+  prepareTool(
+    input: PrepareToolActivityInput,
+  ): Promise<PrepareToolActivityResult>;
+  executeTool(
+    input: ExecuteToolActivityInput,
+  ): Promise<ExecuteToolActivityResult>;
+  recordProgress(input: RecordProgressActivityInput): Promise<void>;
+}

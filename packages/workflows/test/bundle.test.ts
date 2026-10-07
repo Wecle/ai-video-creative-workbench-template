@@ -12,6 +12,8 @@ describe("workflow bundling", () => {
       workflowsPath: path("../src/index.ts"),
     });
     expect(code).toContain("echoWorkflow");
+    expect(code).toContain("agentLoopWorkflow");
+    expect(code).not.toContain("streamText");
   }, 60_000);
 
   it("rejects a workflow that imports a Node built-in", async () => {
