@@ -213,7 +213,9 @@ export type StartCanvasRunResponse = z.infer<
 >;
 export type GetCanvasRunResponse = z.infer<typeof getCanvasRunResponseSchema>;
 
-export function toNodeRuntime(status: NodeRunStatus): import("./runtime").NodeRuntimeStatus {
+export function toNodeRuntime(
+  status: NodeRunStatus,
+): import("./runtime").NodeRuntimeStatus {
   switch (status) {
     case "pending":
       return "queued";
@@ -314,4 +316,3 @@ export type RealtimeTicketResponse = z.infer<
 
 export * from "./assets";
 export * from "./media";
-

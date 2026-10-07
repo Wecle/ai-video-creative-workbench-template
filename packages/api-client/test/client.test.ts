@@ -280,5 +280,29 @@ describe("API client", () => {
         `/gateway/api/v1/projects/${projectId}/canvases/${canvasId}/runs/${runId}`,
       );
     });
+
+    it("createRealtimeTicket validates response and sends auth", async () => {
+      const runId = "11111111-1111-4111-8111-111111111111";
+      const ticketRes = {
+        ticket: "jwt-ticket-token",
+        expiresIn: 30,
+        baseUrl: "http://localhost:4000",
+      };
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json(ticketRes));
+      const api = createApiClient("/gateway", fetcher, {
+        getToken: async () => "user-token",
+      });
+
+      const result = await api.createRealtimeTicket(runId);
+      expect(result).toEqual(ticketRes);
+      expect(fetcher.mock.calls[0]![0]).toBe(
+        "/gateway/api/v1/realtime-tickets",
+      );
+      expect(fetcher.mock.calls[0]![1]?.method).toBe("POST");
+      expect(fetcher.mock.calls[0]![1]?.body).toBe(JSON.stringify({ runId }));
+      expect(authorizationOf(fetcher.mock.calls[0]!)).toBe("Bearer user-token");
+    });
   });
 });

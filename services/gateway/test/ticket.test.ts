@@ -38,8 +38,7 @@ async function boot(
 
 function handshake(url: string, headers: Record<string, string> = {}) {
   return new Promise<
-    | { opened: WebSocket }
-    | { status: number; headers: Record<string, unknown> }
+    { opened: WebSocket } | { status: number; headers: Record<string, unknown> }
   >((resolve, reject) => {
     const socket = new WebSocket(url, { headers });
     socket.once("open", () => resolve({ opened: socket }));
@@ -267,11 +266,8 @@ describe("gateway realtime tickets", () => {
     ).toBe(403);
     // Hit non-run path
     expect(
-      (
-        await fetch(
-          `${gateway.url}/api/v1/realtime/other?ticket=${ticket}`,
-        )
-      ).status,
+      (await fetch(`${gateway.url}/api/v1/realtime/other?ticket=${ticket}`))
+        .status,
     ).toBe(403);
   });
 
@@ -359,7 +355,9 @@ describe("gateway realtime tickets", () => {
     });
 
     // Should close within ~1.5s
-    expect(await Promise.race([closed, new Promise((_, r) => setTimeout(r, 3000))])).toBe(true);
+    expect(
+      await Promise.race([closed, new Promise((_, r) => setTimeout(r, 3000))]),
+    ).toBe(true);
   });
 
   it("returns 503 and fails closed when redis is broken during ticket verification", async () => {

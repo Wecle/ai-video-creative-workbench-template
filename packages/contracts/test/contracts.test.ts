@@ -168,9 +168,9 @@ describe("contracts", () => {
     expect(realtimeStreamEventSchema.parse(doneEvent)).toEqual(doneEvent);
 
     // Rejects invalid events
-    expect(
-      runEventSchema.safeParse({ ...statusEvent, seq: 0 }).success,
-    ).toBe(false); // seq must be positive
+    expect(runEventSchema.safeParse({ ...statusEvent, seq: 0 }).success).toBe(
+      false,
+    ); // seq must be positive
     expect(
       runEventSchema.safeParse({ ...statusEvent, runId: "not-uuid" }).success,
     ).toBe(false);
@@ -181,9 +181,7 @@ describe("contracts", () => {
 
   it("validates realtime ticket request and response", () => {
     const runId = "0f8fad5b-d9cb-469f-a165-70867728950e";
-    expect(
-      realtimeTicketRequestSchema.parse({ runId }),
-    ).toEqual({ runId });
+    expect(realtimeTicketRequestSchema.parse({ runId })).toEqual({ runId });
     expect(
       realtimeTicketRequestSchema.safeParse({ runId: "invalid" }).success,
     ).toBe(false);
@@ -249,9 +247,8 @@ describe("contracts", () => {
     const { readFileSync } = await import("node:fs");
     const { fileURLToPath } = await import("node:url");
     const { z } = await import("zod");
-    const { mediaProbeInputSchema, mediaProbeResultSchema } = await import(
-      "../src/media"
-    );
+    const { mediaProbeInputSchema, mediaProbeResultSchema } =
+      await import("../src/media");
 
     const file = fileURLToPath(
       new URL("../schemas/media-probe.json", import.meta.url),

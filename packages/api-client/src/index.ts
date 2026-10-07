@@ -5,6 +5,7 @@ import {
   healthSchema,
   meResponseSchema,
   projectListResponseSchema,
+  realtimeTicketResponseSchema,
   saveCanvasResponseSchema,
   startCanvasRunResponseSchema,
   type CreateProjectRequest,
@@ -150,6 +151,13 @@ export function createApiClient(
             encodeURIComponent(runId),
           { auth: true },
         ),
+      ),
+    createRealtimeTicket: async (runId: string) =>
+      realtimeTicketResponseSchema.parse(
+        await request("POST", "/api/v1/realtime-tickets", {
+          auth: true,
+          body: { runId },
+        }),
       ),
   };
 }

@@ -117,7 +117,10 @@ describe("internal identity headers", () => {
   });
 
   it("round-trips a ticket identity", () => {
-    const ticketUser = { authType: "ticket", userId: "user_ticket-456" } as const;
+    const ticketUser = {
+      authType: "ticket",
+      userId: "user_ticket-456",
+    } as const;
     const headers = sign({ identity: ticketUser });
     expect(headers[INTERNAL_HEADERS.authType]).toBe("ticket");
     expect(headers[INTERNAL_HEADERS.userId]).toBe(ticketUser.userId);
@@ -144,7 +147,10 @@ describe("internal identity headers", () => {
     const ticketHeaders = sign({
       identity: { authType: "ticket", userId: "user_ticket-456" },
     });
-    const { [INTERNAL_HEADERS.userId]: _removed, ...noUserId } = ticketHeaders;
+    const noUserId = { ...ticketHeaders };
+    delete (noUserId as Record<string, string | undefined>)[
+      INTERNAL_HEADERS.userId
+    ];
     expect(verify(noUserId)).toEqual({ ok: false, reason: "malformed" });
   });
 
@@ -163,7 +169,9 @@ describe("internal identity headers", () => {
     expect(() =>
       sign({ identity: { authType: "ticket", userId: "a\nanonymous" } }),
     ).toThrow();
-    expect(() => sign({ identity: { authType: "ticket", userId: "" } })).toThrow();
+    expect(() =>
+      sign({ identity: { authType: "ticket", userId: "" } }),
+    ).toThrow();
   });
 
   it("rejects a wrong secret", () => {
@@ -178,4 +186,3 @@ describe("internal identity headers", () => {
     expect(pathnameOf("/api/v1/x")).toBe("/api/v1/x");
   });
 });
-

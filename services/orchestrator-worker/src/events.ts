@@ -8,8 +8,7 @@ import {
 } from "@creative/contracts";
 
 export type PublishableRunEvent =
-  | Omit<RunStatusEvent, "seq">
-  | Omit<NodeStatusEvent, "seq">;
+  Omit<RunStatusEvent, "seq"> | Omit<NodeStatusEvent, "seq">;
 
 export interface RunEventPublisher {
   publish(event: PublishableRunEvent): Promise<void>;

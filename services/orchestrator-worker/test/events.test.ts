@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Redis } from "ioredis";
 import { describe, expect, it } from "vitest";
-import { runEventsChannel, runEventsSeqKey, type RunEvent } from "@creative/contracts";
+import {
+  runEventsChannel,
+  runEventsSeqKey,
+  type RunEvent,
+} from "@creative/contracts";
 import { createRunEventPublisher } from "../src/events";
 
 function redisUrl() {

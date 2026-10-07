@@ -14,7 +14,6 @@ import {
 import { Badge, Button } from "@creative/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
-import type { CanvasRuntime, NodeRuntimeStatus } from "@creative/contracts";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,6 +27,7 @@ import { UserMenu } from "../auth/user-menu";
 import { Canvas } from "./canvas";
 import { NodeConfigForm } from "./node-ui";
 import { useCanvasPersistence, useCanvasStore } from "./provider";
+import { trackRun } from "./run-tracker";
 import type { CanvasFlowNode } from "./store";
 
 function NodeTitleForm({ node }: { node: CanvasFlowNode }) {
@@ -159,13 +159,14 @@ function Workbench({
   const notice = useCanvasStore((state) => state.notice);
   const dismissNotice = useCanvasStore((state) => state.dismissNotice);
   const setCanvasRuntime = useCanvasStore((state) => state.setCanvasRuntime);
+  const updateNodeRuntime = useCanvasStore((state) => state.updateNodeRuntime);
 
   const [isRunning, setIsRunning] = useState(false);
-  const pollCleanupRef = useRef<(() => void) | null>(null);
+  const trackCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     return () => {
-      pollCleanupRef.current?.();
+      trackCleanupRef.current?.();
     };
   }, []);
 
@@ -180,51 +181,23 @@ function Workbench({
       const startRes = await api.startCanvasRun(projectId, canvasId);
       const runId = startRes.run.id;
 
-      let delay = 1000;
-      let stopped = false;
-      let timer: ReturnType<typeof setTimeout> | null = null;
+      const tracker = trackRun({
+        projectId,
+        canvasId,
+        runId,
+        api,
+        setCanvasRuntime,
+        updateNodeRuntime,
+        onComplete: () => {
+          setIsRunning(false);
+        },
+        onError: (err) => {
+          console.error("Failed to track canvas run", err);
+          setIsRunning(false);
+        },
+      });
 
-      const stop = () => {
-        stopped = true;
-        if (timer) clearTimeout(timer);
-        setIsRunning(false);
-      };
-
-      pollCleanupRef.current = stop;
-
-      const poll = async () => {
-        if (stopped) return;
-        try {
-          const runRes = await api.getCanvasRun(projectId, canvasId, runId);
-          const currentRun = runRes.run;
-
-          const newRuntime: CanvasRuntime = {};
-          for (const nr of currentRun.nodeRuns) {
-            newRuntime[nr.nodeId] = {
-              status: nr.status as NodeRuntimeStatus,
-              error: nr.error ?? undefined,
-            };
-          }
-          setCanvasRuntime(newRuntime);
-
-          if (
-            currentRun.status === "succeeded" ||
-            currentRun.status === "failed" ||
-            currentRun.status === "cancelled"
-          ) {
-            stop();
-            return;
-          }
-
-          delay = Math.min(delay + 500, 3000);
-          timer = setTimeout(poll, delay);
-        } catch (err) {
-          console.error("Failed to poll canvas run status", err);
-          stop();
-        }
-      };
-
-      timer = setTimeout(poll, delay);
+      trackCleanupRef.current = tracker.stop;
     } catch (err) {
       console.error("Failed to start canvas run", err);
       setIsRunning(false);

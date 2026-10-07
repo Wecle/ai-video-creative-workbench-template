@@ -14,7 +14,11 @@ import {
 
 const { projects, canvases, runs, node_runs } = schema;
 
-async function setupCanvas(db: ReturnType<typeof createTestApp>["db"], userId: string, workspaceId: string) {
+async function setupCanvas(
+  db: ReturnType<typeof createTestApp>["db"],
+  userId: string,
+  workspaceId: string,
+) {
   const [proj] = await db
     .insert(projects)
     .values({
@@ -78,7 +82,11 @@ describe("backend realtime SSE streaming", () => {
     const { app, db, close } = createTestApp(dbUrl);
     const owner = await createUserWithWorkspace(db, "owner");
     const other = await createUserWithWorkspace(db, "other");
-    const { projectId, canvasId } = await setupCanvas(db, owner.userId, owner.workspaceId);
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      owner.userId,
+      owner.workspaceId,
+    );
 
     const [runRow] = await db
       .insert(runs)
@@ -100,10 +108,14 @@ describe("backend realtime SSE streaming", () => {
       const nonExistentRes = await app.inject({
         method: "GET",
         url: `/api/v1/realtime/runs/${fakeRunId}/events`,
-        headers: signedHeaders("GET", `/api/v1/realtime/runs/${fakeRunId}/events`, {
-          authType: "jwt",
-          userId: owner.userId,
-        }),
+        headers: signedHeaders(
+          "GET",
+          `/api/v1/realtime/runs/${fakeRunId}/events`,
+          {
+            authType: "jwt",
+            userId: owner.userId,
+          },
+        ),
       });
       expect(nonExistentRes.statusCode).toBe(404);
 
@@ -111,10 +123,14 @@ describe("backend realtime SSE streaming", () => {
       const inaccessibleRes = await app.inject({
         method: "GET",
         url: `/api/v1/realtime/runs/${runRow.id}/events`,
-        headers: signedHeaders("GET", `/api/v1/realtime/runs/${runRow.id}/events`, {
-          authType: "ticket",
-          userId: other.userId,
-        }),
+        headers: signedHeaders(
+          "GET",
+          `/api/v1/realtime/runs/${runRow.id}/events`,
+          {
+            authType: "ticket",
+            userId: other.userId,
+          },
+        ),
       });
       expect(inaccessibleRes.statusCode).toBe(404);
 
@@ -136,7 +152,11 @@ describe("backend realtime SSE streaming", () => {
       pingIntervalMs: 200,
     });
     const user = await createUserWithWorkspace(db, "stream-user");
-    const { projectId, canvasId } = await setupCanvas(db, user.userId, user.workspaceId);
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      user.userId,
+      user.workspaceId,
+    );
 
     const [runRow] = await db
       .insert(runs)
@@ -246,7 +266,11 @@ describe("backend realtime SSE streaming", () => {
     const bus = createRunEventBus(subRedis);
     const { app, db, close } = createTestApp(dbUrl, { redis, bus });
     const user = await createUserWithWorkspace(db, "close-user");
-    const { projectId, canvasId } = await setupCanvas(db, user.userId, user.workspaceId);
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      user.userId,
+      user.workspaceId,
+    );
 
     const [runRow] = await db
       .insert(runs)

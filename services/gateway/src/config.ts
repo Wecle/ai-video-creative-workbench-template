@@ -10,7 +10,11 @@ const schema = z.object({
   INTERNAL_AUTH_SECRET: secret,
   GATEWAY_TICKET_SECRET: secret,
   GATEWAY_PUBLIC_URL: z.url().default("http://localhost:4000"),
-  REALTIME_MAX_CONNECTION_SECONDS: z.coerce.number().int().positive().default(3600),
+  REALTIME_MAX_CONNECTION_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600),
   TRUST_PROXY: z.string().min(1).optional(),
   HOST: z.string().default("127.0.0.1"),
   GATEWAY_PORT: z.coerce.number().int().min(0).max(65535).default(4000),

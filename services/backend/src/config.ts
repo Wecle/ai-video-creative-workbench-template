@@ -61,8 +61,7 @@ export function loadConfig(
       .map((name) => `${name} must not use the dev-only placeholder`);
     if (!values.TEMPORAL_ADDRESS)
       problems.push("TEMPORAL_ADDRESS is required in production");
-    if (!values.REDIS_URL)
-      problems.push("REDIS_URL is required in production");
+    if (!values.REDIS_URL) problems.push("REDIS_URL is required in production");
     if (problems.length > 0)
       throw new Error(`Invalid backend configuration: ${problems.join("; ")}`);
   }

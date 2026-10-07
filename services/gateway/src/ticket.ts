@@ -70,7 +70,11 @@ export async function consumeRealtimeTicket(options: {
     return { ok: false, code: 401, error: "Invalid ticket" };
   }
 
-  const { sub: userId, jti, res } = payload as {
+  const {
+    sub: userId,
+    jti,
+    res,
+  } = payload as {
     sub?: string;
     jti?: string;
     res?: string;
