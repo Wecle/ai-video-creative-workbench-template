@@ -244,16 +244,18 @@ export async function realtimeRoutes(
         }
 
         // Periodic ping
-        pingInterval = setInterval(async () => {
-          if (ended) return;
-          try {
-            const current = await redis.get(runEventsSeqKey(runId));
-            const seq = current ? Number(current) : lastSeq;
-            stream.write(`event: ping\ndata: ${JSON.stringify({ seq })}\n\n`);
-          } catch {
-            // Ignore redis ping errors
-          }
-        }, pingIntervalMs);
+        if (!ended) {
+          pingInterval = setInterval(async () => {
+            if (ended) return;
+            try {
+              const current = await redis.get(runEventsSeqKey(runId));
+              const seq = current ? Number(current) : lastSeq;
+              stream.write(`event: ping\ndata: ${JSON.stringify({ seq })}\n\n`);
+            } catch {
+              // Ignore redis ping errors
+            }
+          }, pingIntervalMs);
+        }
       } catch (err) {
         closeStream();
         throw err;

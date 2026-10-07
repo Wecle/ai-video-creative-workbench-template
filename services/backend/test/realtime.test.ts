@@ -579,4 +579,86 @@ describe("backend realtime SSE streaming", () => {
     await close();
     redis.disconnect();
   });
+
+  it("does not leak ping interval timer when connecting to a terminal run", async () => {
+    const redis = new Redis(rUrl);
+    const subRedis = new Redis(rUrl);
+    const bus = createRunEventBus(subRedis);
+    const PING_MS = 6789;
+    const { app, db, close } = createTestApp(dbUrl, {
+      redis,
+      bus,
+      pingIntervalMs: PING_MS,
+    });
+    const user = await createUserWithWorkspace(db, "terminal-timer-user");
+    const { projectId, canvasId } = await setupCanvas(
+      db,
+      user.userId,
+      user.workspaceId,
+    );
+
+    const [runRow] = await db
+      .insert(runs)
+      .values({
+        canvasId,
+        projectId,
+        workspaceId: user.workspaceId,
+        createdBy: user.userId,
+        canvasVersion: 1,
+        snapshot: {},
+        workflowId: "wf-terminal-leak",
+        status: "succeeded",
+      })
+      .returning();
+
+    const activeTimers = new Set<unknown>();
+    const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
+
+    const setSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((handler, ms, ...args) => {
+        const timer = origSetInterval(handler, ms, ...args);
+        if (ms === PING_MS) {
+          activeTimers.add(timer);
+        }
+        return timer;
+      });
+
+    const clearSpy = vi
+      .spyOn(globalThis, "clearInterval")
+      .mockImplementation((timer) => {
+        activeTimers.delete(timer);
+        return origClearInterval(timer);
+      });
+
+    try {
+      const url = `/api/v1/realtime/runs/${runRow.id}/events`;
+      const headers = signedHeaders("GET", url, {
+        authType: "jwt",
+        userId: user.userId,
+      });
+
+      const res = await app.inject({
+        method: "GET",
+        url,
+        headers,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("event: done");
+      expect(res.body).toContain('"status":"succeeded"');
+
+      // Assert that no ping timer remains active after done event
+      expect(activeTimers.size).toBe(0);
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
+      for (const t of activeTimers) {
+        origClearInterval(t as NodeJS.Timeout);
+      }
+      await close();
+      redis.disconnect();
+    }
+  });
 });
