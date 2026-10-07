@@ -304,5 +304,78 @@ describe("API client", () => {
       expect(fetcher.mock.calls[0]![1]?.body).toBe(JSON.stringify({ runId }));
       expect(authorizationOf(fetcher.mock.calls[0]!)).toBe("Bearer user-token");
     });
+
+    it("asset endpoints validate response and send auth", async () => {
+      const assetId = "22222222-2222-4222-8222-222222222222";
+      const workspaceId = "33333333-3333-4333-8333-333333333333";
+      const uploadRes = {
+        asset: { id: assetId, status: "pending" },
+        upload: {
+          url: "http://storage.test/upload",
+          method: "PUT",
+          headers: { "content-type": "image/png" },
+          expiresIn: 300,
+        },
+      };
+      const assetSummary = {
+        id: assetId,
+        workspaceId,
+        key: `workspaces/${workspaceId}/assets/${assetId}`,
+        contentType: "image/png",
+        sizeBytes: 1024,
+        status: "ready",
+        metadata: null,
+        createdBy: null,
+        createdAt: "2026-10-07T00:00:00.000Z",
+        updatedAt: "2026-10-07T00:00:00.000Z",
+      };
+      const downloadRes = {
+        url: "http://storage.test/download",
+        expiresIn: 300,
+      };
+
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json(uploadRes))
+        .mockResolvedValueOnce(json({ asset: assetSummary }))
+        .mockResolvedValueOnce(json({ asset: assetSummary }))
+        .mockResolvedValueOnce(json(downloadRes));
+
+      const api = createApiClient("/gateway", fetcher, {
+        getToken: async () => "asset-token",
+      });
+
+      // 1. requestAssetUpload
+      const up = await api.requestAssetUpload({
+        workspaceId,
+        contentType: "image/png",
+        sizeBytes: 1024,
+      });
+      expect(up).toEqual(uploadRes);
+      expect(fetcher.mock.calls[0]![0]).toBe(
+        "/gateway/api/v1/assets/upload-url",
+      );
+
+      // 2. completeAsset
+      const comp = await api.completeAsset(assetId);
+      expect(comp.asset).toEqual(assetSummary);
+      expect(fetcher.mock.calls[1]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}/complete`,
+      );
+
+      // 3. getAsset
+      const got = await api.getAsset(assetId);
+      expect(got.asset).toEqual(assetSummary);
+      expect(fetcher.mock.calls[2]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}`,
+      );
+
+      // 4. getAssetDownloadUrl
+      const dl = await api.getAssetDownloadUrl(assetId);
+      expect(dl).toEqual(downloadRes);
+      expect(fetcher.mock.calls[3]![0]).toBe(
+        `/gateway/api/v1/assets/${assetId}/download-url`,
+      );
+    });
   });
 });

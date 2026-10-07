@@ -136,6 +136,7 @@ export function createTestApp(
     bus,
     redis,
     pingIntervalMs,
+    storage,
   }: {
     agentRuns?: AgentRunService;
     canvasRuns?: CanvasRunService;
@@ -145,6 +146,7 @@ export function createTestApp(
     bus?: RunEventBus;
     redis?: Redis;
     pingIntervalMs?: number;
+    storage?: import("@creative/storage").ObjectStorage;
   } = {},
 ) {
   const database = createDatabase(databaseUrl);
@@ -167,6 +169,7 @@ export function createTestApp(
     bus,
     redis,
     pingIntervalMs,
+    storage,
   });
   return {
     app,

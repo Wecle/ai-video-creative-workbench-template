@@ -29,6 +29,8 @@ import { projectRoutes } from "./routes/projects";
 import { meRoutes, type Database } from "./routes/me";
 import { realtimeRoutes } from "./routes/realtime";
 import { webhookRoutes } from "./routes/webhooks";
+import { assetRoutes } from "./routes/assets";
+import type { ObjectStorage } from "@creative/storage";
 import type { RunEventBus } from "./realtime/run-event-bus";
 import type { AgentRunService } from "./temporal/agent-runs";
 import type { CanvasRunService } from "./temporal/canvas-runs";
@@ -72,6 +74,8 @@ export type BackendOptions = {
   redis?: Redis;
   /** Ping interval for realtime SSE streams in ms (default: 15_000). */
   pingIntervalMs?: number;
+  /** S3-compatible object storage for assets. */
+  storage?: ObjectStorage;
 };
 
 const ok = () => "ready" as const;
@@ -92,6 +96,7 @@ export function buildApp({
   bus,
   redis,
   pingIntervalMs,
+  storage,
 }: BackendOptions) {
   const app = Fastify({
     logger,
@@ -167,6 +172,7 @@ export function buildApp({
       await projectRoutes(v1, db);
       await canvasRoutes(v1, db, registry);
       await canvasRunRoutes(v1, db, canvasRuns, allowMockMode);
+      await assetRoutes(v1, { db, storage });
     });
   });
   return app;

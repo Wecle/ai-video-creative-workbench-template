@@ -19,6 +19,7 @@ if (!baseUrl && process.env.CI)
 
 const expectedTables = [
   "accounts",
+  "assets",
   "canvases",
   "jwks",
   "node_runs",

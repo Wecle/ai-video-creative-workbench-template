@@ -1,14 +1,19 @@
 import {
   createProjectResponseSchema,
+  completeAssetResponseSchema,
+  getAssetDownloadUrlResponseSchema,
+  getAssetResponseSchema,
   getCanvasResponseSchema,
   getCanvasRunResponseSchema,
   healthSchema,
   meResponseSchema,
   projectListResponseSchema,
   realtimeTicketResponseSchema,
+  requestAssetUploadResponseSchema,
   saveCanvasResponseSchema,
   startCanvasRunResponseSchema,
   type CreateProjectRequest,
+  type RequestAssetUploadRequest,
   type SaveCanvasRequest,
   type StartCanvasRunRequest,
 } from "@creative/contracts";
@@ -158,6 +163,36 @@ export function createApiClient(
           auth: true,
           body: { runId },
         }),
+      ),
+    requestAssetUpload: async (input: RequestAssetUploadRequest) =>
+      requestAssetUploadResponseSchema.parse(
+        await request("POST", "/api/v1/assets/upload-url", {
+          auth: true,
+          body: input,
+        }),
+      ),
+    completeAsset: async (assetId: string) =>
+      completeAssetResponseSchema.parse(
+        await request(
+          "POST",
+          `/api/v1/assets/${encodeURIComponent(assetId)}/complete`,
+          { auth: true },
+        ),
+      ),
+    getAsset: async (assetId: string) =>
+      getAssetResponseSchema.parse(
+        await get(`/api/v1/assets/${encodeURIComponent(assetId)}`, {
+          auth: true,
+        }),
+      ),
+    getAssetDownloadUrl: async (assetId: string) =>
+      getAssetDownloadUrlResponseSchema.parse(
+        await get(
+          `/api/v1/assets/${encodeURIComponent(assetId)}/download-url`,
+          {
+            auth: true,
+          },
+        ),
       ),
   };
 }

@@ -48,12 +48,26 @@ describe("backend config", () => {
         BETTER_AUTH_SECRET: `dev-only-${secret}`,
       }),
     ).toThrow(/BETTER_AUTH_SECRET must not use the dev-only/);
+
+    expect(() =>
+      loadConfig({
+        ...env,
+        NODE_ENV: "production",
+        TEMPORAL_ADDRESS: "temporal:7233",
+        REDIS_URL: "redis://localhost:6379",
+      }),
+    ).toThrow(/S3_\* configuration is required in production/);
+
     expect(
       loadConfig({
         ...env,
         NODE_ENV: "production",
         TEMPORAL_ADDRESS: "temporal:7233",
         REDIS_URL: "redis://localhost:6379",
+        S3_ENDPOINT: "http://s3:8333",
+        S3_ACCESS_KEY: "key",
+        S3_SECRET_KEY: "secret",
+        S3_BUCKET: "bucket",
       }).production,
     ).toBe(true);
   });

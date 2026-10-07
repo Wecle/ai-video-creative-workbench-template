@@ -164,3 +164,31 @@ export const node_runs = pgTable(
     index("node_runs_run_id_idx").on(table.runId),
   ],
 );
+
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    key: text("key").notNull().unique(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    status: text("status").default("pending").notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("assets_workspace_id_idx").on(table.workspaceId)],
+);

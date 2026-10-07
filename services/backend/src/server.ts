@@ -10,6 +10,7 @@ import { defaultProviderRegistry } from "@creative/providers";
 
 import { Redis } from "ioredis";
 import { createRunEventBus } from "./realtime/run-event-bus";
+import { createS3Storage } from "@creative/storage";
 
 const config = loadConfig();
 const telemetry = startTelemetry(
@@ -42,6 +43,13 @@ const subscriberRedis = config.redisUrl
 
 const bus = subscriberRedis ? createRunEventBus(subscriberRedis) : undefined;
 
+const storage = config.s3 ? createS3Storage(config.s3) : undefined;
+if (storage && config.s3?.configureCors) {
+  storage.configureCors([config.webOrigin]).catch((err) => {
+    console.warn("Failed to configure S3 CORS:", err);
+  });
+}
+
 const app = buildApp({
   auth,
   db: database.db,
@@ -49,6 +57,7 @@ const app = buildApp({
   webOrigin: config.webOrigin,
   bus,
   redis,
+  storage,
   agentRuns: createTemporalAgentRuns({
     client: temporalClient,
     connection: temporal,

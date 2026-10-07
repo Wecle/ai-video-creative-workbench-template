@@ -10,6 +10,7 @@ import {
   Save,
   Sparkles,
   Undo2,
+  Upload,
 } from "lucide-react";
 import { Badge, Button } from "@creative/ui";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ import { Canvas } from "./canvas";
 import { NodeConfigForm } from "./node-ui";
 import { useCanvasPersistence, useCanvasStore } from "./provider";
 import { trackRun } from "./run-tracker";
+import { uploadAsset, AssetValidationError } from "../assets/upload";
 import type { CanvasFlowNode } from "./store";
 
 function NodeTitleForm({ node }: { node: CanvasFlowNode }) {
@@ -204,6 +206,61 @@ function Workbench({
     }
   }
 
+  const [isUploading, setIsUploading] = useState(false);
+  const [assetMessage, setAssetMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const workspaceId = me.data?.workspaces[0]?.id;
+    if (!workspaceId) return;
+
+    setIsUploading(true);
+    setAssetMessage(null);
+    try {
+      await uploadAsset({
+        file,
+        workspaceId,
+        api,
+      });
+      setAssetMessage({
+        type: "success",
+        text: t("canvas.assets.uploadSuccess"),
+      });
+    } catch (err) {
+      if (err instanceof AssetValidationError) {
+        if (err.code === "INVALID_TYPE") {
+          setAssetMessage({
+            type: "error",
+            text: t("canvas.assets.invalidType"),
+          });
+        } else if (err.code === "FILE_TOO_LARGE") {
+          setAssetMessage({
+            type: "error",
+            text: t("canvas.assets.fileTooLarge"),
+          });
+        } else {
+          setAssetMessage({
+            type: "error",
+            text: t("canvas.assets.uploadFailed"),
+          });
+        }
+      } else {
+        setAssetMessage({
+          type: "error",
+          text: t("canvas.assets.uploadFailed"),
+        });
+      }
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(dismissNotice, 4000);
@@ -293,6 +350,25 @@ function Workbench({
             <Download />
             {t("canvas.toolbar.exportJson")}
           </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/png,image/jpeg,image/webp,video/mp4,audio/mpeg,audio/wav"
+            onChange={handleFileSelected}
+            data-testid="asset-upload-input"
+          />
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            data-testid="asset-upload-button"
+          >
+            <Upload className="size-4" />
+            {isUploading
+              ? t("canvas.toolbar.uploading")
+              : t("canvas.toolbar.uploadAsset")}
+          </Button>
           <LocaleSwitcher />
           <UserMenu
             email={session.data?.user.email}
@@ -317,6 +393,25 @@ function Workbench({
           className="border-b border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200"
         >
           {t("canvas.saveError")}
+        </div>
+      )}
+      {assetMessage && (
+        <div
+          role="alert"
+          className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2 text-sm ${
+            assetMessage.type === "success"
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+              : "border-red-500/40 bg-red-500/10 text-red-200"
+          }`}
+        >
+          <span>{assetMessage.text}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setAssetMessage(null)}
+          >
+            ✕
+          </Button>
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
