@@ -215,6 +215,12 @@ export function buildApp({
       await scope.register(httpProxy, apiProxy("/api/auth", false));
     });
 
+    // webhooks: external provider callbacks. No Bearer JWT required, public IP rate-limited.
+    await root.register(async (scope) => {
+      scope.addHook("onRequest", limiters.byIp("public"));
+      await scope.register(httpProxy, apiProxy("/api/webhooks", false));
+    });
+
     // protected: business API. Bearer JWT required; limited per user once known.
     await root.register(async (scope) => {
       scope.addHook("onRequest", limiters.byIp("apiPreAuth"));
