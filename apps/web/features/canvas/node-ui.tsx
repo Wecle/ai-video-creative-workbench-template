@@ -93,14 +93,33 @@ function NodeShell({
     <div
       className={
         "w-[230px] rounded-xl border bg-surface shadow-xl " +
-        (selected ? "border-brand" : "border-white/15")
+        (selected
+          ? "border-brand"
+          : status === "running"
+            ? "border-brand/70"
+            : status === "failed"
+              ? "border-red-500/70"
+              : status === "succeeded"
+                ? "border-emerald-500/70"
+                : "border-white/15")
       }
     >
       <div className="border-b border-white/10 px-3 py-3">
         <div className="flex items-center justify-between gap-2">
           <div className="truncate text-sm font-semibold">{data.title}</div>
           {status !== "idle" && (
-            <span className="text-xs text-brand">
+            <span
+              className={
+                "text-xs font-medium " +
+                (status === "failed"
+                  ? "text-red-400"
+                  : status === "succeeded"
+                    ? "text-emerald-400"
+                    : status === "running"
+                      ? "text-brand animate-pulse"
+                      : "text-neutral-400")
+              }
+            >
               {t(`canvas.node.status.${status}`)}
             </span>
           )}

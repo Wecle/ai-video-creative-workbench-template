@@ -1,11 +1,20 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, Plus, Redo2, Save, Sparkles, Undo2 } from "lucide-react";
+import {
+  Download,
+  Play,
+  Plus,
+  Redo2,
+  Save,
+  Sparkles,
+  Undo2,
+} from "lucide-react";
 import { Badge, Button } from "@creative/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
+import type { CanvasRuntime, NodeRuntimeStatus } from "@creative/contracts";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -108,9 +117,11 @@ function SaveStatusBadge() {
 
 function Workbench({
   projectId,
+  canvasId,
   canvasName,
 }: {
   projectId: string;
+  canvasId: string;
   canvasName: string;
 }) {
   const t = useT();
@@ -147,6 +158,78 @@ function Workbench({
   const exportSnapshot = useCanvasStore((state) => state.exportSnapshot);
   const notice = useCanvasStore((state) => state.notice);
   const dismissNotice = useCanvasStore((state) => state.dismissNotice);
+  const setCanvasRuntime = useCanvasStore((state) => state.setCanvasRuntime);
+
+  const [isRunning, setIsRunning] = useState(false);
+  const pollCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      pollCleanupRef.current?.();
+    };
+  }, []);
+
+  async function handleRun() {
+    if (isRunning) return;
+    setIsRunning(true);
+    try {
+      if (saveStatus !== "saved" && saveStatus !== "conflict") {
+        await persistence.flush();
+      }
+
+      const startRes = await api.startCanvasRun(projectId, canvasId);
+      const runId = startRes.run.id;
+
+      let delay = 1000;
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const stop = () => {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+        setIsRunning(false);
+      };
+
+      pollCleanupRef.current = stop;
+
+      const poll = async () => {
+        if (stopped) return;
+        try {
+          const runRes = await api.getCanvasRun(projectId, canvasId, runId);
+          const currentRun = runRes.run;
+
+          const newRuntime: CanvasRuntime = {};
+          for (const nr of currentRun.nodeRuns) {
+            newRuntime[nr.nodeId] = {
+              status: nr.status as NodeRuntimeStatus,
+              error: nr.error ?? undefined,
+            };
+          }
+          setCanvasRuntime(newRuntime);
+
+          if (
+            currentRun.status === "succeeded" ||
+            currentRun.status === "failed" ||
+            currentRun.status === "cancelled"
+          ) {
+            stop();
+            return;
+          }
+
+          delay = Math.min(delay + 500, 3000);
+          timer = setTimeout(poll, delay);
+        } catch (err) {
+          console.error("Failed to poll canvas run status", err);
+          stop();
+        }
+      };
+
+      timer = setTimeout(poll, delay);
+    } catch (err) {
+      console.error("Failed to start canvas run", err);
+      setIsRunning(false);
+    }
+  }
 
   useEffect(() => {
     if (!notice) return;
@@ -224,6 +307,14 @@ function Workbench({
           >
             <Save />
             {t("canvas.toolbar.save")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRun}
+            disabled={isRunning || saveStatus === "conflict"}
+          >
+            <Play className="size-4 text-brand" />
+            {isRunning ? t("canvas.toolbar.running") : t("canvas.toolbar.run")}
           </Button>
           <Button variant="outline" onClick={download}>
             <Download />
@@ -311,6 +402,7 @@ function Workbench({
 
 export function CanvasWorkbench(props: {
   projectId: string;
+  canvasId: string;
   canvasName: string;
 }) {
   return (

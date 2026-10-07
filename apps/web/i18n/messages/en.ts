@@ -83,6 +83,8 @@ export const en = {
       undo: "Undo",
       redo: "Redo",
       save: "Save",
+      run: "Run",
+      running: "Running…",
       exportJson: "Export JSON",
     },
     saveStatus: {

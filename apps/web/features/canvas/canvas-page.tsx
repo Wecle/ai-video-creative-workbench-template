@@ -55,7 +55,11 @@ export function CanvasPage({
         api.saveCanvas(projectId, canvasId, { baseVersion, state })
       }
     >
-      <CanvasWorkbench projectId={projectId} canvasName={meta.name} />
+      <CanvasWorkbench
+        projectId={projectId}
+        canvasId={canvasId}
+        canvasName={meta.name}
+      />
     </CanvasProvider>
   );
 }

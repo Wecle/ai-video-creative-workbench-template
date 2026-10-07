@@ -28,4 +28,18 @@ export const zhCN: DeepPartial<Messages> = {
     open: "打开画布",
     nameLabel: "项目名称",
   },
+  canvas: {
+    toolbar: {
+      run: "运行画布",
+      running: "运行中…",
+    },
+    node: {
+      status: {
+        queued: "排队中",
+        running: "运行中",
+        succeeded: "已完成",
+        failed: "失败",
+      },
+    },
+  },
 };
