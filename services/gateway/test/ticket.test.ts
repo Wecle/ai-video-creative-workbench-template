@@ -31,6 +31,7 @@ async function boot(
     redis,
     ticketSecret: TICKET_SECRET,
     webOrigin: "http://localhost:3000",
+    rateLimitNamespace: `gw:rl:test:${randomUUID()}:`,
     ...options,
   });
   return { upstream, gateway, redis };
