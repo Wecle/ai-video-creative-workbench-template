@@ -183,16 +183,15 @@ describe("backend realtime agent SSE streaming", () => {
       // Client disconnects
       clientReq.destroy();
 
-      // Verify NUMSUB becomes 0
+      // Verify NUMSUB and listenerCount become 0
       await vi.waitFor(
         async () => {
+          expect(agentBus.listenerCount(runRow!.id)).toBe(0);
           const resAfter = await redis.pubsub("NUMSUB", channel);
           expect(Number(resAfter[1])).toBe(0);
         },
         { timeout: 2000, interval: 50 },
       );
-
-      expect(agentBus.listenerCount(runRow!.id)).toBe(0);
     } finally {
       await close();
       redis.disconnect();
@@ -252,9 +251,14 @@ describe("backend realtime agent SSE streaming", () => {
       expect(res.statusCode).toBe(500);
 
       // Must not leak bus listener or redis subscription
-      expect(agentBus.listenerCount(runRow!.id)).toBe(0);
-      const resSub = await redis.pubsub("NUMSUB", channel);
-      expect(Number(resSub[1])).toBe(0);
+      await vi.waitFor(
+        async () => {
+          expect(agentBus.listenerCount(runRow!.id)).toBe(0);
+          const resSub = await redis.pubsub("NUMSUB", channel);
+          expect(Number(resSub[1])).toBe(0);
+        },
+        { timeout: 2000, interval: 50 },
+      );
     } finally {
       await close();
       redis.disconnect();
@@ -345,6 +349,17 @@ describe("backend realtime agent SSE streaming", () => {
       );
 
       clientReq.destroy();
+      await vi.waitFor(
+        async () => {
+          expect(agentBus.listenerCount(runRow!.id)).toBe(0);
+          const resSub = await redis.pubsub(
+            "NUMSUB",
+            agentEventsChannel(runRow!.id),
+          );
+          expect(Number(resSub[1])).toBe(0);
+        },
+        { timeout: 2000, interval: 50 },
+      );
       await redis.del(seqKey);
     } finally {
       await close();
@@ -623,7 +638,12 @@ describe("backend realtime agent SSE streaming", () => {
       // Close app while client stream is still open
       await close();
 
-      expect(agentBus.listenerCount(runRow!.id)).toBe(0);
+      await vi.waitFor(
+        () => {
+          expect(agentBus.listenerCount(runRow!.id)).toBe(0);
+        },
+        { timeout: 2000, interval: 50 },
+      );
     } finally {
       redis.disconnect();
     }
@@ -738,7 +758,55 @@ describe("backend realtime agent SSE streaming", () => {
       const channel = agentEventsChannel(runId);
       const seqKey = agentEventsSeqKey(runId);
 
-      await redis.set(seqKey, "2");
+      // seq0 = 1
+      await redis.set(seqKey, "1");
+
+      const originalGet = redis.get.bind(redis);
+      let publishedBuffered = false;
+      vi.spyOn(redis, "get").mockImplementation(async (key) => {
+        if (typeof key === "string" && key === seqKey && !publishedBuffered) {
+          publishedBuffered = true;
+          // Publish seq: 0 (must be discarded: <= seq0)
+          await redis.publish(
+            channel,
+            JSON.stringify({
+              type: "agent.step.started",
+              runId,
+              seq: 0,
+              stepId: "s-zero",
+              index: 0,
+              attempt: 1,
+            }),
+          );
+          // Publish seq: 1 (must be discarded: <= seq0)
+          await redis.publish(
+            channel,
+            JSON.stringify({
+              type: "agent.step.started",
+              runId,
+              seq: 1,
+              stepId: "s-one",
+              index: 1,
+              attempt: 1,
+            }),
+          );
+          // Publish seq: 2 (must be delivered: > seq0)
+          await redis.publish(
+            channel,
+            JSON.stringify({
+              type: "agent.step.started",
+              runId,
+              seq: 2,
+              stepId: "s-two",
+              index: 2,
+              attempt: 1,
+            }),
+          );
+          await new Promise((r) => setTimeout(r, 60));
+          return "1";
+        }
+        return originalGet(key);
+      });
 
       const url = `/api/v1/realtime/agent/runs/${runId}/events`;
       const headers = signedHeaders("GET", url, {
@@ -752,41 +820,16 @@ describe("backend realtime agent SSE streaming", () => {
         headers,
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(publishedBuffered).toBe(true));
 
-      // Event with seq 1 should be ignored
-      await redis.publish(
-        channel,
-        JSON.stringify({
-          type: "agent.step.started",
-          runId,
-          seq: 1,
-          stepId: "s0",
-          index: 0,
-          attempt: 1,
-        }),
-      );
-
-      // Event with seq 3 should be received
-      await redis.publish(
-        channel,
-        JSON.stringify({
-          type: "agent.step.started",
-          runId,
-          seq: 3,
-          stepId: "s0",
-          index: 0,
-          attempt: 1,
-        }),
-      );
-
-      // Event with seq 4 terminal
+      // After buffer flush and live mode enabled, publish terminal seq: 3
+      await new Promise((r) => setTimeout(r, 60));
       await redis.publish(
         channel,
         JSON.stringify({
           type: "agent.run.status",
           runId,
-          seq: 4,
+          seq: 3,
           status: "completed",
           outcome: "finished",
         }),
@@ -795,9 +838,21 @@ describe("backend realtime agent SSE streaming", () => {
       const response = await responsePromise;
       expect(response.statusCode).toBe(200);
 
-      expect(response.body).not.toContain("id: 1\n");
+      // Snapshot has seq: 1
+      expect(response.body).toContain("event: snapshot");
+      expect(response.body).toContain('"seq":1');
+
+      // seq=0 and seq=1 tool/step events MUST NOT be received
+      expect(response.body).not.toContain("id: 0\n");
+      expect(response.body).not.toContain("s-zero");
+      expect(response.body).not.toContain("s-one");
+
+      // seq=2 was > seq0 and must be delivered
+      expect(response.body).toContain("id: 2\n");
+      expect(response.body).toContain("s-two");
+
+      // seq=3 terminal event must be delivered
       expect(response.body).toContain("id: 3\n");
-      expect(response.body).toContain("id: 4\n");
       expect(response.body).toContain("event: done");
     } finally {
       await close();

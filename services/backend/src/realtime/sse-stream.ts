@@ -147,7 +147,6 @@ export async function openRunStream<
       return;
     }
     const seq0 = rawSeq ? Number(rawSeq) : 0;
-    lastSeq = seq0;
 
     const { snapshot, initialTerminalStatus } = await loadSnapshot(seq0);
     if (request.raw.destroyed || ended) {
@@ -177,6 +176,7 @@ export async function openRunStream<
         sendEvent(evt);
       }
     }
+    lastSeq = Math.max(lastSeq, seq0);
     live = true;
 
     if (initialTerminalStatus) {
