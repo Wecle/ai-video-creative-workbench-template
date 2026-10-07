@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -6,10 +6,7 @@ import { schema } from "@creative/database";
 import { Redis } from "ioredis";
 import { startTelemetry } from "@creative/observability";
 import { AGENT_TASK_QUEUE } from "@creative/workflows/constants";
-import {
-  createModelResolver,
-  loadSkills,
-} from "@creative/agent-core/runtime";
+import { createModelResolver, loadSkills } from "@creative/agent-core/runtime";
 import { createActivities } from "./activities";
 import { createAgentLoopActivities } from "./agent-loop-activities";
 import { createAgentEventPublisher } from "./events";
@@ -25,10 +22,7 @@ const telemetry = startTelemetry("creative-agent-runner");
 try {
   loadSkills(config.agentSkillsDir, ["shot-list"]);
 } catch (err) {
-  console.error(
-    `Skills validation failed for ${config.agentSkillsDir}:`,
-    err,
-  );
+  console.error(`Skills validation failed for ${config.agentSkillsDir}:`, err);
   process.exit(1);
 }
 
