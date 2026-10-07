@@ -20,7 +20,15 @@ const telemetry = startTelemetry("creative-agent-runner");
 
 // Validate skills directory and required skills at startup (S10)
 try {
-  loadSkills(config.agentSkillsDir, ["shot-list"]);
+  const loaded = loadSkills(config.agentSkillsDir, [
+    "canvas.applyPatch",
+    "skill.load",
+  ]);
+  if (!loaded.has("shot-list")) {
+    throw new Error(
+      `Required skill 'shot-list' missing from ${config.agentSkillsDir}`,
+    );
+  }
 } catch (err) {
   console.error(`Skills validation failed for ${config.agentSkillsDir}:`, err);
   process.exit(1);

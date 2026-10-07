@@ -72,12 +72,10 @@ export function createAgentLoopActivities({
       }) as CanvasSnapshot;
       const canvasNodeIds = (snapshot.nodes ?? []).map((n) => n.id);
 
-      let skillsMap: ReturnType<typeof loadSkills>;
-      try {
-        skillsMap = loadSkills(skillsDir);
-      } catch {
-        skillsMap = new Map();
-      }
+      const skillsMap = loadSkills(skillsDir, [
+        "canvas.applyPatch",
+        "skill.load",
+      ]);
 
       const availableSkills = Array.from(skillsMap.values()).map((s) => ({
         name: s.manifest.name,
@@ -139,12 +137,10 @@ export function createAgentLoopActivities({
       const profile = row ? resolveProfile(row.profileId) : undefined;
       const allowedSkills = profile?.skills ?? [];
 
-      let skillsMap: ReturnType<typeof loadSkills>;
-      try {
-        skillsMap = loadSkills(skillsDir);
-      } catch {
-        skillsMap = new Map();
-      }
+      const skillsMap = loadSkills(skillsDir, [
+        "canvas.applyPatch",
+        "skill.load",
+      ]);
 
       const toolRegistry = createToolRegistry([
         createBuiltinToolProvider(),

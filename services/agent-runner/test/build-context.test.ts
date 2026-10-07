@@ -146,4 +146,20 @@ describe("buildContext activity", () => {
       expect(ctx.system).not.toContain(line);
     }
   });
+
+  it("propagates loadSkills exception rather than swallowing it (S10)", async () => {
+    const runId = randomUUID();
+    await testDb.client`
+      INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Test error', 1, '{"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher: dummyPublisher,
+      skillsDir: "/non/existent/skills/path",
+      modelResolver: createModelResolver(),
+    });
+
+    await expect(activities.buildContext({ runId })).rejects.toThrow();
+  });
 });
