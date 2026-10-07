@@ -42,13 +42,8 @@
     "test": {
       "dependsOn": ["^test"],
       "outputs": [],
-      "passThroughEnv": [
-        "CI",
-        "DATABASE_URL",
-        "TEST_DATABASE_URL",
-        "REDIS_URL",
-        "TEMPORAL_CLI_PATH"
-      ]
+      "env": ["TEST_DATABASE_URL", "REDIS_URL", "CI"],
+      "passThroughEnv": ["DATABASE_URL", "TEMPORAL_CLI_PATH"]
     }
   }
 }

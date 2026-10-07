@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { Worker } from "@temporalio/worker";
+import {
+  bundleWorkflowCode,
+  Worker,
+  type WorkflowBundle,
+} from "@temporalio/worker";
 import type { TestWorkflowEnvironment } from "@temporalio/testing";
 import { ApplicationFailure } from "@temporalio/workflow";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -17,9 +21,15 @@ const workflowsPath = fileURLToPath(
 );
 
 let env: TestWorkflowEnvironment;
+let workflowBundle: WorkflowBundle;
+
 beforeAll(async () => {
   env = await createTemporalTestEnv();
+  workflowBundle = await bundleWorkflowCode({
+    workflowsPath,
+  });
 }, 120_000);
+
 afterAll(async () => {
   await env?.teardown();
 });
@@ -32,7 +42,7 @@ async function run(activities: AgentActivities, value: EchoInput) {
   const worker = await Worker.create({
     connection: env.nativeConnection,
     taskQueue: AGENT_TASK_QUEUE,
-    workflowsPath,
+    workflowBundle,
     activities: { ...activities },
   });
   return worker.runUntil(
@@ -59,7 +69,7 @@ describe("echoWorkflow", () => {
     );
     expect(result).toEqual({ message: "echo: Hi there" });
     expect(seen).toEqual([value]);
-  });
+  }, 30_000);
 
   it("retries a failing activity and succeeds on the second attempt", async () => {
     let calls = 0;

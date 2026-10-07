@@ -86,3 +86,81 @@ export const canvases = pgTable(
     index("canvases_workspace_id_idx").on(table.workspaceId),
   ],
 );
+
+export const runs = pgTable(
+  "runs",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    canvasId: uuid("canvas_id")
+      .notNull()
+      .references(() => canvases.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").default("queued").notNull(),
+    canvasVersion: integer("canvas_version").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    options: jsonb("options")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    workflowId: text("workflow_id").notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("runs_canvas_id_idx").on(table.canvasId),
+    index("runs_project_id_idx").on(table.projectId),
+    index("runs_workspace_id_idx").on(table.workspaceId),
+    index("runs_created_by_idx").on(table.createdBy),
+  ],
+);
+
+export const node_runs = pgTable(
+  "node_runs",
+  {
+    id: uuid("id")
+      .default(sql`pg_catalog.gen_random_uuid()`)
+      .primaryKey(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    nodeType: text("node_type").notNull(),
+    provider: text("provider"),
+    externalJobId: text("external_job_id"),
+    status: text("status").default("pending").notNull(),
+    inputs: jsonb("inputs"),
+    outputs: jsonb("outputs"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("node_runs_run_id_node_id_unique").on(table.runId, table.nodeId),
+    unique("node_runs_provider_external_job_id_unique").on(
+      table.provider,
+      table.externalJobId,
+    ),
+    index("node_runs_run_id_idx").on(table.runId),
+  ],
+);

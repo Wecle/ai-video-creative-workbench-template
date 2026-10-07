@@ -5,6 +5,8 @@ import { loadConfig } from "./config";
 import { createDatabase, schema } from "@creative/database";
 import { startTelemetry } from "@creative/observability";
 import { createTemporalAgentRuns } from "./temporal/agent-runs";
+import { createTemporalCanvasRuns } from "./temporal/canvas-runs";
+import { defaultProviderRegistry } from "@creative/providers";
 
 const config = loadConfig();
 const telemetry = startTelemetry(
@@ -27,6 +29,13 @@ const app = buildApp({
     client: temporalClient,
     connection: temporal,
   }),
+  canvasRuns: createTemporalCanvasRuns({
+    client: temporalClient,
+    connection: temporal,
+  }),
+  providerRegistry: defaultProviderRegistry,
+  production: config.production,
+  allowMockMode: config.allowMockMode,
 });
 let closing = false;
 async function shutdown() {

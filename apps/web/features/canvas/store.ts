@@ -26,7 +26,11 @@ import {
   type Position,
   type Result,
 } from "@creative/canvas-doc";
-import type { CanvasRuntime, CanvasSnapshot } from "@creative/contracts";
+import type {
+  CanvasRuntime,
+  CanvasSnapshot,
+  NodeRuntime,
+} from "@creative/contracts";
 import type { Registry } from "@creative/node-registry";
 
 /**
@@ -76,6 +80,8 @@ export type CanvasState = {
   // UI actions
   select: (id: string | null) => void;
   setSaveStatus: (status: SaveStatus) => void;
+  setCanvasRuntime: (runtime: CanvasRuntime) => void;
+  updateNodeRuntime: (nodeId: string, runtime: Partial<NodeRuntime>) => void;
   reportConnectionError: (code: ConnectionErrorCode) => void;
   /** Sets a notice for a connection the user tried to make but React Flow refused. */
   explainConnection: (connection: Connection) => void;
@@ -223,6 +229,8 @@ export function createCanvasStore({
       | "commitPositions"
       | "select"
       | "setSaveStatus"
+      | "setCanvasRuntime"
+      | "updateNodeRuntime"
       | "reportConnectionError"
       | "explainConnection"
       | "dismissNotice"
@@ -353,6 +361,19 @@ export function createCanvasStore({
           ),
         })),
       setSaveStatus: (saveStatus) => set({ saveStatus }),
+      setCanvasRuntime: (runtime) => set({ runtime }),
+      updateNodeRuntime: (nodeId, nodeRuntime) =>
+        set((state) => ({
+          runtime: {
+            ...state.runtime,
+            [nodeId]: {
+              ...state.runtime[nodeId],
+              ...nodeRuntime,
+              status:
+                nodeRuntime.status ?? state.runtime[nodeId]?.status ?? "idle",
+            },
+          },
+        })),
       reportConnectionError: (code) =>
         set({ notice: { kind: "connection", code } }),
       explainConnection: (connection) => {

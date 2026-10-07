@@ -13,6 +13,7 @@ const schema = z
     GOOGLE_CLIENT_SECRET: z.string().optional(),
     TEMPORAL_ADDRESS: z.string().min(1).optional(),
     TEMPORAL_NAMESPACE: z.string().min(1).default("default"),
+    ALLOW_MOCK_MODE: z.string().optional(),
     HOST: z.string().default("127.0.0.1"),
     BACKEND_PORT: z.coerce.number().int().min(0).max(65535).default(4001),
   })
@@ -27,6 +28,7 @@ const schema = z
 
 export type BackendConfig = {
   production: boolean;
+  allowMockMode: boolean;
   databaseUrl: string;
   webOrigin: string;
   betterAuthSecret: string;
@@ -60,8 +62,10 @@ export function loadConfig(
     if (problems.length > 0)
       throw new Error(`Invalid backend configuration: ${problems.join("; ")}`);
   }
+  const allowMockMode = values.ALLOW_MOCK_MODE === "true" || !production;
   return {
     production,
+    allowMockMode,
     databaseUrl: values.DATABASE_URL,
     webOrigin: values.WEB_ORIGIN,
     betterAuthSecret: values.BETTER_AUTH_SECRET,

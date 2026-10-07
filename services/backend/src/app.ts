@@ -13,15 +13,35 @@ import {
   registry as defaultRegistry,
   type Registry,
 } from "@creative/node-registry";
+import {
+  defaultProviderRegistry,
+  type ProviderRegistry,
+} from "@creative/providers";
 import { sql } from "drizzle-orm";
 import type { Auth } from "./auth/auth";
 import { authRoutes } from "./auth/routes";
 import { requireUser, verifyGatewayIdentity } from "./plugins/gateway-trust";
 import { agentRunRoutes } from "./routes/agent-runs";
 import { canvasRoutes } from "./routes/canvases";
+import { canvasRunRoutes } from "./routes/canvas-runs";
 import { projectRoutes } from "./routes/projects";
 import { meRoutes, type Database } from "./routes/me";
+import { webhookRoutes } from "./routes/webhooks";
 import type { AgentRunService } from "./temporal/agent-runs";
+import type { CanvasRunService } from "./temporal/canvas-runs";
+
+const defaultCanvasRuns: CanvasRunService = {
+  start: async () => {
+    throw new Error(
+      "canvasRuns.start must not be called without being provided",
+    );
+  },
+  sendCallbackSignal: async () => {
+    throw new Error(
+      "canvasRuns.sendCallbackSignal must not be called without being provided",
+    );
+  },
+};
 
 export type BackendOptions = {
   logger?: boolean;
@@ -33,8 +53,16 @@ export type BackendOptions = {
   webOrigin: string;
   /** Starts and queries agent runs (Temporal in production, a fake in tests). */
   agentRuns: AgentRunService;
+  /** Starts canvas runs and signals workflows. */
+  canvasRuns?: CanvasRunService;
+  /** Provider registry (default: defaultProviderRegistry). */
+  providerRegistry?: ProviderRegistry;
   /** Node definitions saved canvases are validated against (default: the shipped registry). */
   registry?: Registry;
+  /** Production mode */
+  production?: boolean;
+  /** Allow mockMode in canvas runs (default: !production) */
+  allowMockMode?: boolean;
 };
 
 const ok = () => "ready" as const;
@@ -47,7 +75,11 @@ export function buildApp({
   internalSecret,
   webOrigin,
   agentRuns,
+  canvasRuns = defaultCanvasRuns,
+  providerRegistry = defaultProviderRegistry,
   registry = defaultRegistry,
+  production = false,
+  allowMockMode = !production,
 }: BackendOptions) {
   const app = Fastify({
     logger,
@@ -55,6 +87,7 @@ export function buildApp({
     requestTimeout: 10000,
   }).withTypeProvider<ZodTypeProvider>();
   app.decorateRequest("identity");
+
   // First hook: nothing runs for a request the gateway did not sign.
   app.addHook("onRequest", verifyGatewayIdentity(internalSecret));
   app.setValidatorCompiler(validatorCompiler);
@@ -96,6 +129,10 @@ export function buildApp({
       return reply.code(503).send({ status: "not_ready", dependencies });
     });
     app.register(authRoutes, { auth, webOrigin });
+    app.register(async (webhookScope) => {
+      await webhookRoutes(webhookScope, db, providerRegistry, canvasRuns);
+    });
+
     // Business API: a valid gateway signature that vouches for a user is required.
     app.register(async (v1) => {
       v1.addHook("onRequest", requireUser);
@@ -103,6 +140,7 @@ export function buildApp({
       await agentRunRoutes(v1, agentRuns);
       await projectRoutes(v1, db);
       await canvasRoutes(v1, db, registry);
+      await canvasRunRoutes(v1, db, canvasRuns, allowMockMode);
     });
   });
   return app;

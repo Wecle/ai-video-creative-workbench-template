@@ -1,0 +1,35 @@
+{
+  "name": "@creative/orchestrator-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "build": "tsup && node dist/bundle-workflows.js",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@creative/contracts": "workspace:*",
+    "@creative/database": "workspace:*",
+    "@creative/observability": "workspace:*",
+    "@creative/providers": "workspace:*",
+    "@creative/workflows": "workspace:*",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@temporalio/activity": "catalog:",
+    "@temporalio/worker": "catalog:",
+    "drizzle-orm": "^0.45.3",
+    "postgres": "^3.4.7",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "^4.20.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

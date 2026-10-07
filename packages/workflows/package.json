@@ -6,13 +6,16 @@
   "exports": {
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
-    "./activities": "./src/activities.ts"
+    "./activities": "./src/activities.ts",
+    "./dag": "./src/dag.ts",
+    "./signals": "./src/signals.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@creative/contracts": "workspace:*",
     "@temporalio/workflow": "catalog:"
   },
   "devDependencies": {

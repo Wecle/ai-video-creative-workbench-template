@@ -406,6 +406,28 @@ describe("canvas store", () => {
       expect(json).not.toMatch(/"status"|"viewport"/);
     });
 
+    it("updates and sets canvas runtime state without altering document snapshot", () => {
+      const { store } = setup();
+      expect(store.getState().runtime).toEqual({});
+
+      store.getState().setCanvasRuntime({
+        "text-1": { status: "running" },
+        "image-1": { status: "queued" },
+      });
+
+      expect(store.getState().runtime["text-1"]).toEqual({ status: "running" });
+      expect(store.getState().runtime["image-1"]).toEqual({ status: "queued" });
+
+      store.getState().updateNodeRuntime("text-1", { status: "succeeded" });
+      expect(store.getState().runtime["text-1"]).toEqual({
+        status: "succeeded",
+      });
+
+      // Snapshot remains clean of runtime
+      const json = JSON.stringify(store.getState().exportSnapshot());
+      expect(json).not.toMatch(/"runtime"/);
+    });
+
     it("destroy stops listening to the document", () => {
       const { store, doc } = setup();
       store.getState().destroy();

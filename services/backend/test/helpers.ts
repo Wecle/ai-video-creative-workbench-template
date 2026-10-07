@@ -21,6 +21,13 @@ export const WEB_ORIGIN = "http://localhost:3000";
 
 /** Integration tests need Postgres; in CI a missing variable is a failure, not a skip. */
 export function testDatabaseUrl() {
+  if (!process.env.TEST_DATABASE_URL) {
+    try {
+      process.loadEnvFile(new URL("../../../.env", import.meta.url));
+    } catch {
+      // ignore
+    }
+  }
   const url = process.env.TEST_DATABASE_URL;
   if (!url && process.env.CI)
     throw new Error("TEST_DATABASE_URL is required in CI");
@@ -47,6 +54,9 @@ export function signedHeaders(
  * Default for tests that are not about agent runs: reaching Temporal is a bug there, so
  * start/get throw. ping resolves so that /ready only reflects the database.
  */
+import type { CanvasRunService } from "../src/temporal/canvas-runs";
+import type { ProviderRegistry } from "@creative/providers";
+
 export const unusedAgentRuns: AgentRunService = {
   start: async () => {
     throw new Error("agentRuns.start must not be called in this test");
@@ -55,6 +65,17 @@ export const unusedAgentRuns: AgentRunService = {
     throw new Error("agentRuns.get must not be called in this test");
   },
   ping: async () => {},
+};
+
+export const unusedCanvasRuns: CanvasRunService = {
+  start: async () => {
+    throw new Error("canvasRuns.start must not be called in this test");
+  },
+  sendCallbackSignal: async () => {
+    throw new Error(
+      "canvasRuns.sendCallbackSignal must not be called in this test",
+    );
+  },
 };
 
 /**
@@ -92,8 +113,17 @@ export function createTestApp(
     "postgresql://nobody:nobody@127.0.0.1:1/none",
   {
     agentRuns = unusedAgentRuns,
+    canvasRuns = unusedCanvasRuns,
+    providerRegistry,
     registry,
-  }: { agentRuns?: AgentRunService; registry?: Registry } = {},
+    production,
+  }: {
+    agentRuns?: AgentRunService;
+    canvasRuns?: CanvasRunService;
+    providerRegistry?: ProviderRegistry;
+    registry?: Registry;
+    production?: boolean;
+  } = {},
 ) {
   const database = createDatabase(databaseUrl);
   const auth = createAuth({
@@ -108,7 +138,10 @@ export function createTestApp(
     internalSecret: INTERNAL_SECRET,
     webOrigin: WEB_ORIGIN,
     agentRuns,
+    canvasRuns,
+    providerRegistry,
     registry,
+    production,
   });
   return {
     app,

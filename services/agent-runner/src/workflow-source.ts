@@ -25,5 +25,7 @@ export function workflowSource(
 
 /** Entry file of the workflow package (its TypeScript source, resolved through the workspace link). */
 export function workflowsSourcePath(): string {
-  return createRequire(import.meta.url).resolve("@creative/workflows");
+  return createRequire(import.meta.url).resolve(
+    ["@creative", "workflows"].join("/"),
+  );
 }

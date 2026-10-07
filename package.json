@@ -24,6 +24,7 @@
     "dev:gateway": "pnpm --filter @creative/gateway dev",
     "dev:backend": "pnpm --filter @creative/backend dev",
     "dev:agent": "pnpm --filter @creative/agent-runner dev",
+    "dev:orchestrator": "pnpm --filter @creative/orchestrator-worker dev",
     "dev:worker": "cd workers/media-worker-python && uv run uvicorn src.main:app --reload --host 127.0.0.1 --port 4200",
     "db:generate": "pnpm --filter @creative/database generate",
     "db:migrate": "pnpm --filter @creative/database migrate",

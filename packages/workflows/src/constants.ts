@@ -27,3 +27,22 @@ export function agentRunWorkflowId(userId: string, runId: string): string {
   }
   return `agent-run:${userId}:${runId}`;
 }
+
+/** Task queue served by `services/orchestrator-worker`. */
+export const ORCHESTRATOR_TASK_QUEUE = "orchestrator";
+
+/** Canvas DAG workflow type name. */
+export const CANVAS_DAG_WORKFLOW_TYPE = "canvasDagWorkflow";
+
+/** Execution timeout for canvas workflow. */
+export const CANVAS_RUN_EXECUTION_TIMEOUT = "10 minutes";
+
+/**
+ * Canvas workflow ID derived from canvasId and runId.
+ */
+export function canvasRunWorkflowId(canvasId: string, runId: string): string {
+  if (!canvasId || !runId || canvasId.includes(":") || runId.includes(":")) {
+    throw new Error("Invalid canvas run identifiers");
+  }
+  return `canvas-run:${canvasId}:${runId}`;
+}
