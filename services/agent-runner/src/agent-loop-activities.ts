@@ -164,10 +164,11 @@ export function createAgentLoopActivities({
       ]);
 
       const envModel = parseModelRef(agentModel);
-      const modelRef = envModel ?? profile?.defaultModel ?? {
-        provider: "mock",
-        modelId: "mock",
-      };
+      const modelRef = envModel ??
+        profile?.defaultModel ?? {
+          provider: "mock",
+          modelId: "mock",
+        };
 
       let model;
       try {

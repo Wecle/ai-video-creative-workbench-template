@@ -5,17 +5,18 @@ import { Redis } from "ioredis";
 import { Worker } from "@temporalio/worker";
 import type { TestWorkflowEnvironment } from "@temporalio/testing";
 import { ApplicationFailure } from "@temporalio/activity";
-import { afterAll, beforeAll, describe, expect, expectTypeOf, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "vitest";
 import { schema } from "@creative/database";
 import { eq } from "drizzle-orm";
-import {
-  agentEventsChannel,
-  type AgentStreamEvent,
-} from "@creative/contracts";
-import {
-  decideToolCall,
-  type RouteDecision,
-} from "@creative/agent-core/pure";
+import { agentEventsChannel, type AgentStreamEvent } from "@creative/contracts";
+import { decideToolCall, type RouteDecision } from "@creative/agent-core/pure";
 import {
   createModelResolver,
   createScriptedMockModel,
@@ -83,13 +84,14 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
   // --- H5: B5.2 / B5.3 Integration ---
   describe("H5: Real buildContext + Mock Model profile and routing tests", () => {
     it("H5(a): two different profiles produce different system prompts and tools, loop code identical; profile without canvas.applyPatch ends without approval", async () => {
-      const capturedCalls: Array<{ profileId: string; prompt: unknown; tools: unknown }> = [];
+      const capturedCalls: Array<{
+        profileId: string;
+        prompt: unknown;
+        tools: unknown;
+      }> = [];
 
       // 1. Run 1: creative-assistant (has canvas.applyPatch)
-      const runId1 = await createRun(
-        "creative-assistant",
-        "Add a note please",
-      );
+      const runId1 = await createRun("creative-assistant", "Add a note please");
       const model1 = createScriptedMockModel({
         onCall: (info) =>
           capturedCalls.push({ profileId: "creative-assistant", ...info }),
@@ -114,11 +116,14 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
         ...workflowSource("development"),
       });
 
-      const handle1 = await env.client.workflow.start(AGENT_LOOP_WORKFLOW_TYPE, {
-        taskQueue: taskQueue1,
-        workflowId: agentLoopWorkflowId("user-1", runId1),
-        args: [{ runId: runId1, userId: "user-1" }],
-      });
+      const handle1 = await env.client.workflow.start(
+        AGENT_LOOP_WORKFLOW_TYPE,
+        {
+          taskQueue: taskQueue1,
+          workflowId: agentLoopWorkflowId("user-1", runId1),
+          args: [{ runId: runId1, userId: "user-1" }],
+        },
+      );
 
       const promise1 = worker1.runUntil(handle1.result());
 
@@ -129,7 +134,9 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
           .from(schema.agent_runs)
           .where(eq(schema.agent_runs.id, runId1));
         if (row?.status === "waiting_approval") {
-          const proposals = (row.state as { proposals: Array<{ toolCallId: string }> }).proposals;
+          const proposals = (
+            row.state as { proposals: Array<{ toolCallId: string }> }
+          ).proposals;
           if (proposals.length > 0) {
             await handle1.signal(agentApprovalSignal, {
               toolCallId: proposals[0]!.toolCallId,
@@ -145,10 +152,7 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
       expect(res1.status).toBe("completed");
 
       // 2. Run 2: readonly-assistant (no canvas.applyPatch)
-      const runId2 = await createRun(
-        "readonly-assistant",
-        "Review the canvas",
-      );
+      const runId2 = await createRun("readonly-assistant", "Review the canvas");
       const model2 = createScriptedMockModel({
         onCall: (info) =>
           capturedCalls.push({ profileId: "readonly-assistant", ...info }),
@@ -172,11 +176,14 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
         ...workflowSource("development"),
       });
 
-      const handle2 = await env.client.workflow.start(AGENT_LOOP_WORKFLOW_TYPE, {
-        taskQueue: taskQueue2,
-        workflowId: agentLoopWorkflowId("user-1", runId2),
-        args: [{ runId: runId2, userId: "user-1" }],
-      });
+      const handle2 = await env.client.workflow.start(
+        AGENT_LOOP_WORKFLOW_TYPE,
+        {
+          taskQueue: taskQueue2,
+          workflowId: agentLoopWorkflowId("user-1", runId2),
+          args: [{ runId: runId2, userId: "user-1" }],
+        },
+      );
 
       // Run 2 must finish directly WITHOUT ANY SIGNAL/APPROVAL
       const res2 = await worker2.runUntil(handle2.result());
@@ -189,7 +196,8 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
         .from(schema.agent_runs)
         .where(eq(schema.agent_runs.id, runId2));
       expect(finalRow2?.status).toBe("completed");
-      const proposals2 = (finalRow2?.state as { proposals: unknown[] })?.proposals;
+      const proposals2 = (finalRow2?.state as { proposals: unknown[] })
+        ?.proposals;
       expect(proposals2).toHaveLength(0);
 
       // Verify captured calls: systems and tools are different
@@ -259,7 +267,9 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
           .where(eq(schema.agent_runs.id, runId));
         if (row?.status === "waiting_approval") {
           reachedWaitingApproval = true;
-          const proposals = (row.state as { proposals: Array<{ toolCallId: string }> }).proposals;
+          const proposals = (
+            row.state as { proposals: Array<{ toolCallId: string }> }
+          ).proposals;
           expect(proposals).toHaveLength(1);
           // Approve it so workflow finishes
           await handle.signal(agentApprovalSignal, {
@@ -317,7 +327,10 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
     });
 
     it("throws nonRetryable ModelRequestError for unknown provider", async () => {
-      const runId = await createRun("creative-assistant", "test unknown provider");
+      const runId = await createRun(
+        "creative-assistant",
+        "test unknown provider",
+      );
 
       const activities = createAgentLoopActivities({
         db: testDb.db,
@@ -346,11 +359,16 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
   // --- M-d: Sanitization of sensitive error details ---
   describe("M-d: Sensitive detail sanitization", () => {
     it("provider error with sensitive details is sanitized and does not leak into ApplicationFailure", async () => {
-      const runId = await createRun("creative-assistant", "test sensitive error");
+      const runId = await createRun(
+        "creative-assistant",
+        "test sensitive error",
+      );
 
       const sensitiveResolver = {
         resolve() {
-          throw new Error("SECRET_API_KEY_abc123 failed to connect to secret-host.internal");
+          throw new Error(
+            "SECRET_API_KEY_abc123 failed to connect to secret-host.internal",
+          );
         },
       };
 
@@ -404,7 +422,12 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
               controller.enqueue({
                 type: "finish",
                 usage: {
-                  inputTokens: { total: 5, noCache: 5, cacheRead: 0, cacheWrite: 0 },
+                  inputTokens: {
+                    total: 5,
+                    noCache: 5,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                  },
                   outputTokens: { total: 0, text: 0, reasoning: 0 },
                 },
                 finishReason: { unified: "stop", raw: "stop" },
@@ -438,7 +461,10 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
     });
 
     it("non-retryable activity failure leads to agent_runs failed and SSE receiving done over real Redis", async () => {
-      const runId = await createRun("creative-assistant", "test unretryable sse");
+      const runId = await createRun(
+        "creative-assistant",
+        "test unretryable sse",
+      );
       const channel = agentEventsChannel(runId);
       const receivedEvents: AgentStreamEvent[] = [];
 
@@ -452,7 +478,10 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
 
       const brokenResolver = {
         resolve() {
-          throw ApplicationFailure.nonRetryable("Fatal model config error", "ModelRequestError");
+          throw ApplicationFailure.nonRetryable(
+            "Fatal model config error",
+            "ModelRequestError",
+          );
         },
       };
 
@@ -477,7 +506,9 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
         args: [{ runId, userId: "user-1" }],
       });
 
-      const workflowResult = (await worker.runUntil(handle.result())) as { status: string };
+      const workflowResult = (await worker.runUntil(handle.result())) as {
+        status: string;
+      };
       expect(workflowResult.status).toBe("failed");
 
       // Check agent_runs in database is failed
@@ -490,7 +521,9 @@ describe("B5 integration & audit requirements (H2, H5, M-d, M-f)", () => {
 
       // Check that agent.run.status event with status: failed was published to Redis
       const failedEvt = receivedEvents.find(
-        (e) => e.type === "agent.run.status" && (e as { status?: string }).status === "failed",
+        (e) =>
+          e.type === "agent.run.status" &&
+          (e as { status?: string }).status === "failed",
       );
       expect(failedEvt).toBeDefined();
 

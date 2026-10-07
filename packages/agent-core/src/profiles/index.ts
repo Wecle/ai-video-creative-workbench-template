@@ -1,9 +1,6 @@
 import type { AgentProfileSummary } from "@creative/contracts";
 import type { AgentProfile } from "./types";
-import {
-  creativeAssistantProfile,
-  readonlyAssistantProfile,
-} from "./general";
+import { creativeAssistantProfile, readonlyAssistantProfile } from "./general";
 
 export * from "./types";
 export * from "./schema";

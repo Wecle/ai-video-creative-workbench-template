@@ -123,7 +123,12 @@ describe("llmStep and stream runtime", () => {
             controller.enqueue({
               type: "finish",
               usage: {
-                inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
+                inputTokens: {
+                  total: 10,
+                  noCache: 10,
+                  cacheRead: 0,
+                  cacheWrite: 0,
+                },
                 outputTokens: { total: 10, text: 10, reasoning: 0 },
               },
               finishReason: { unified: "tool-calls", raw: "tool-calls" },

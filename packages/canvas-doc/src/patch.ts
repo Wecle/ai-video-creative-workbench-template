@@ -10,8 +10,7 @@ import { addNode, connect, updateConfig } from "./ops";
 import { fail, type OpErrorCode, type Result } from "./result";
 
 export type PatchResult =
-  | { ok: true }
-  | { ok: false; code: OpErrorCode; index?: number };
+  { ok: true } | { ok: false; code: OpErrorCode; index?: number };
 
 function executeOp(
   doc: Y.Doc,
