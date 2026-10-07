@@ -91,5 +91,22 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
 
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    environment:
+      AWS_ACCESS_KEY_ID: creative-dev
+      AWS_SECRET_ACCESS_KEY: creative-dev-secret-0123456789abcdef
+      S3_BUCKET: creative-assets
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   postgres-data:
+  s3-data:
