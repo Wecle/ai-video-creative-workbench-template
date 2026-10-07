@@ -184,9 +184,11 @@ describe("applyPatch", () => {
       ops: [{ op: "addNode", id: "n-bad", type: "text" }],
     } as unknown as CanvasPatch;
     const resBadOp = applyPatch(doc, "agent", badOpPatch);
-    expect(resBadOp.ok).toBe(false);
-    expect(resBadOp.code).toBe("invalid-position");
-    expect(resBadOp.index).toBe(0);
+    expect(resBadOp).toEqual({
+      ok: false,
+      code: "invalid-position",
+      index: 0,
+    });
     expect(encodeState(doc)).toEqual(beforeState);
 
     // Unknown op
@@ -195,9 +197,11 @@ describe("applyPatch", () => {
       ops: [{ op: "notAnOp", id: "x" }],
     } as unknown as CanvasPatch;
     const resUnknownOp = applyPatch(doc, "agent", unknownOpPatch);
-    expect(resUnknownOp.ok).toBe(false);
-    expect(resUnknownOp.code).toBe("unknown-op");
-    expect(resUnknownOp.index).toBe(0);
+    expect(resUnknownOp).toEqual({
+      ok: false,
+      code: "unknown-op",
+      index: 0,
+    });
 
     // Invalid patch structure (not an object with ops array)
     const notPatch = null as unknown as CanvasPatch;
