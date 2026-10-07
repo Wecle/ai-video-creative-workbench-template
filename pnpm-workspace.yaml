@@ -8,6 +8,7 @@ catalog:
   yjs: ^13.6.33
   vitest: ^4.1.11
   tsup: ^8.5.0
+  ioredis: ^5.11.1
   "@temporalio/activity": ^1.24.0
   "@temporalio/client": ^1.24.0
   "@temporalio/testing": ^1.24.0

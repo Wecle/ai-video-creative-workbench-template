@@ -7,7 +7,8 @@ export type RateLimitTier =
   | "authGeneral"
   | "apiPreAuth"
   | "api"
-  | "realtimeConnect";
+  | "realtimeConnect"
+  | "realtimeTicket";
 
 // Starting values, not capacity planning. Keep every number in this one place.
 export const rateLimitTiers: Record<
@@ -20,6 +21,7 @@ export const rateLimitTiers: Record<
   apiPreAuth: { max: 600, timeWindow: "1 minute" }, // by IP, before authentication
   api: { max: 300, timeWindow: "1 minute" }, // by user id, after authentication
   realtimeConnect: { max: 30, timeWindow: "1 minute" }, // by IP
+  realtimeTicket: { max: 20, timeWindow: "1 minute" }, // by user id
 };
 
 // Credential-handling endpoints, checked against the routes Better Auth 1.7 registers.
@@ -36,7 +38,7 @@ export function isAuthStrict(method: string, url: string) {
 export type Limiters = ReturnType<typeof createLimiters>;
 
 // Tiers keyed by authenticated user id instead of client IP.
-const userTiers = new Set<RateLimitTier>(["api"]);
+const userTiers = new Set<RateLimitTier>(["api", "realtimeTicket"]);
 
 /** Requires `@fastify/rate-limit` to be registered with `global: false`. */
 export function createLimiters(app: FastifyInstance) {

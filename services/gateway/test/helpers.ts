@@ -14,6 +14,7 @@ import { AUTH_JWT_AUDIENCE } from "@creative/contracts/internal-auth";
 import { buildApp, type GatewayOptions } from "../src/app";
 
 export const INTERNAL_SECRET = "test-internal-secret-0123456789abcdef";
+export const TICKET_SECRET = "test-ticket-secret-0123456789abcdef";
 export const JWT_ISSUER = "http://localhost:3000";
 export const TEST_USER_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
@@ -194,6 +195,7 @@ export async function startGateway(
   const app = buildApp({
     logger: false,
     internalSecret: INTERNAL_SECRET,
+    ticketSecret: TICKET_SECRET,
     getKey: createLocalJWKSet(key.jwks),
     jwt: { issuer: JWT_ISSUER, audience: AUTH_JWT_AUDIENCE },
     ...options,
