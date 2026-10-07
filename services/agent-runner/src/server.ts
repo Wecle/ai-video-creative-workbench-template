@@ -55,6 +55,7 @@ const agentLoopActivities = createAgentLoopActivities({
   publisher,
   skillsDir: config.agentSkillsDir,
   modelResolver,
+  agentModel: config.agentModel,
 });
 
 let connection: NativeConnection | undefined;

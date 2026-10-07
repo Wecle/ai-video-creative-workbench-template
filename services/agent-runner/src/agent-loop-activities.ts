@@ -31,6 +31,18 @@ export interface AgentLoopActivitiesOptions {
   publisher: AgentEventPublisher;
   skillsDir: string;
   modelResolver: ModelResolver;
+  agentModel?: string;
+}
+
+function parseModelRef(
+  str?: string,
+): { provider: string; modelId: string } | undefined {
+  if (!str) return undefined;
+  const idx = str.indexOf(":");
+  if (idx > 0) {
+    return { provider: str.slice(0, idx), modelId: str.slice(idx + 1) };
+  }
+  return { provider: str, modelId: str };
 }
 
 export function createAgentLoopActivities({
@@ -38,6 +50,7 @@ export function createAgentLoopActivities({
   publisher,
   skillsDir,
   modelResolver,
+  agentModel,
 }: AgentLoopActivitiesOptions): AgentLoopActivities {
   return {
     async buildContext({ runId }: BuildContextActivityInput) {
@@ -77,10 +90,13 @@ export function createAgentLoopActivities({
         "skill.load",
       ]);
 
-      const availableSkills = Array.from(skillsMap.values()).map((s) => ({
-        name: s.manifest.name,
-        description: s.manifest.description,
-      }));
+      const profileSkillsSet = new Set(profile.skills);
+      const availableSkills = Array.from(skillsMap.values())
+        .filter((s) => profileSkillsSet.has(s.manifest.name))
+        .map((s) => ({
+          name: s.manifest.name,
+          description: s.manifest.description,
+        }));
 
       const router = createIntentRouter();
       const routeDecision = await router.route({
@@ -147,7 +163,8 @@ export function createAgentLoopActivities({
         createSkillToolProvider(skillsMap, allowedSkills),
       ]);
 
-      const modelRef = profile?.defaultModel ?? {
+      const envModel = parseModelRef(agentModel);
+      const modelRef = envModel ?? profile?.defaultModel ?? {
         provider: "mock",
         modelId: "mock",
       };
@@ -156,8 +173,9 @@ export function createAgentLoopActivities({
       try {
         model = modelResolver.resolve(modelRef);
       } catch (err: unknown) {
+        console.error("Failed to resolve model provider:", err);
         throw ApplicationFailure.nonRetryable(
-          `Failed to resolve model provider '${modelRef.provider}': ${err instanceof Error ? err.message : String(err)}`,
+          "Failed to resolve model provider",
           "ModelRequestError",
         );
       }
@@ -190,6 +208,7 @@ export function createAgentLoopActivities({
           },
         });
       } catch (err: unknown) {
+        console.error("LLM step execution error:", err);
         const e = err as Record<string, unknown> | undefined;
         if (e?.isNonRetryable || e?.type === "ModelRequestError") {
           throw ApplicationFailure.nonRetryable(
@@ -269,59 +288,65 @@ export function createAgentLoopActivities({
       runId,
       toolCall,
     }: ExecuteToolActivityInput): Promise<ExecuteToolActivityResult> {
-      if (toolCall.toolName === "canvas.applyPatch") {
+      const [row] = await db
+        .select({ profileId: schema.agent_runs.profileId })
+        .from(schema.agent_runs)
+        .where(eq(schema.agent_runs.id, runId));
+
+      const profile = row ? resolveProfile(row.profileId) : undefined;
+      if (!profile) {
         return {
-          ok: true,
-          summary: (toolCall.input.summary as string) ?? "Apply canvas patch",
-          patch: toolCall.input,
+          ok: false,
+          summary: "Profile resolution failed for agent run",
         };
       }
 
-      if (toolCall.toolName === "skill.load") {
-        const skillName = String(toolCall.input.name ?? "");
-        const [row] = await db
-          .select({ profileId: schema.agent_runs.profileId })
-          .from(schema.agent_runs)
-          .where(eq(schema.agent_runs.id, runId));
+      const skillsMap = loadSkills(skillsDir, [
+        "canvas.applyPatch",
+        "skill.load",
+      ]);
 
-        const profile = row ? resolveProfile(row.profileId) : undefined;
-        if (profile && !profile.skills.includes(skillName)) {
-          return {
-            ok: false,
-            summary: `Skill '${skillName}' is not allowed for profile '${profile.id}'`,
-          };
-        }
+      const toolRegistry = createToolRegistry([
+        createBuiltinToolProvider(),
+        createSkillToolProvider(skillsMap, profile.skills),
+      ]);
 
-        try {
-          const skillsMap = loadSkills(skillsDir);
-          const skill = skillsMap.get(skillName);
-          if (!skill) {
-            return {
-              ok: false,
-              summary: `Skill '${skillName}' not found`,
-            };
-          }
-          const maxLen = 8192;
-          const content =
-            skill.content.length > maxLen
-              ? skill.content.slice(0, maxLen) + "\n...[truncated]"
-              : skill.content;
-          return {
-            ok: true,
-            summary: content,
-          };
-        } catch (err) {
-          return {
-            ok: false,
-            summary: err instanceof Error ? err.message : String(err),
-          };
-        }
+      const provider = toolRegistry.getProvider(toolCall.toolName);
+      if (!provider) {
+        return {
+          ok: false,
+          summary: `No provider registered for tool '${toolCall.toolName}'`,
+        };
       }
 
-      return {
-        ok: true,
-        summary: `Executed ${toolCall.toolName}`,
-      };
+      try {
+        const res = await provider.execute(
+          {
+            toolCallId: toolCall.toolCallId,
+            name: toolCall.toolName,
+            input: toolCall.input,
+          },
+          { runId },
+        );
+
+        const maxLen = 8192;
+        let summary =
+          (res as { content?: string }).content ?? res.summary ?? "";
+        if (summary.length > maxLen) {
+          summary = summary.slice(0, maxLen) + "\n...[truncated]";
+        }
+
+        return {
+          ok: res.ok,
+          summary,
+          patch: res.ok ? res.patch : undefined,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          summary: err instanceof Error ? err.message : String(err),
+        };
+      }
     },
 
     async recordProgress({

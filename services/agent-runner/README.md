@@ -14,7 +14,10 @@ Requires a running Temporal (`pnpm infra:up`), Postgres, and Redis; without them
 - `TEMPORAL_ADDRESS` (default `localhost:7233`, required in production), `TEMPORAL_NAMESPACE` (default `default`).
 - `DATABASE_URL` (required in production).
 - `REDIS_URL` (required in production).
-- `AGENT_MODEL` (default `mock`).
+- `AGENT_MODEL` (default `mock`): 模型解析优先级为：
+  1. Worker 环境变量 `AGENT_MODEL`（Worker 级别配置/覆盖，格式为 `provider:modelId` 或 `provider`）。
+  2. 运行所选 Profile 的 `profile.defaultModel`。
+  3. 兜底默认 `{ provider: "mock", modelId: "mock" }`。
 - `AGENT_MOCK_CHUNK_DELAY_MS` (default `0`).
 - `AGENT_SKILLS_DIR` (default `capabilities/skills`).
 
