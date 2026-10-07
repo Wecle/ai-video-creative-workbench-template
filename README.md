@@ -84,15 +84,18 @@ pnpm docker:down
 ├── workers/
 │   └── media-worker-python/         # [active] Python 媒体任务接口和处理 Worker
 ├── packages/
-│   ├── agent-core/                  # [active] Agent 内核和 Echo 演示 Adapter
+│   ├── agent-core/                  # [active] Agent 内核（pure 策略/路由/上下文 + runtime 模型与技能加载）
 │   │   └── src/
-│   │       ├── context/             # [reserved] 上下文预算、压缩和快照
-│   │       ├── policy/              # [reserved] 权限、预算和审批策略
-│   │       ├── tools/runtime/       # [reserved] Tool Calling 生命周期
-│   │       └── skills/runtime/      # [reserved] Skill 加载和执行
+│   │       ├── pure.ts              # 纯策略、消息、路由与上下文导出
+│   │       ├── policy/              # 风险等级、预算估算与审批决策
+│   │       ├── router/              # 意图路由与规则匹配
+│   │       ├── context/             # 画布摘要与提示词构建
+│   │       ├── profiles/            # AgentProfile 定义与校验
+│   │       ├── runtime/             # AI SDK LLM Step 执行与 Mock 模型
+│   │       └── skills/              # Skill 清单与文件加载
 │   ├── api-client/                  # Web 等客户端使用的类型化 API Client
-│   ├── canvas-doc/                  # [active] 画布 Yjs 文档层：操作、连接校验、快照、撤销历史（同构）
-│   ├── contracts/                   # API、事件、任务、画布快照和能力声明
+│   ├── canvas-doc/                  # [active] 画布 Yjs 文档层：操作、补丁应用、连接校验、快照、撤销历史（同构）
+│   ├── contracts/                   # API、事件、任务、画布快照、补丁与 Agent 契约
 │   ├── database/                    # 服务端 Drizzle/PostgreSQL 连接和迁移
 │   ├── domain/                      # [reserved] 跨服务领域模型和规则
 │   ├── node-registry/               # [active] 画布节点定义、注册表和 JSON Schema 产物（同构）
@@ -100,12 +103,12 @@ pnpm docker:down
 │   ├── ui/                          # 共享 shadcn/ui 源码和基础组件
 │   └── workflows/                   # [active] Temporal workflow（仅确定性代码和契约）
 ├── capabilities/
-│   └── skills/                      # [reserved] 版本化 Skill 定义和元数据
+│   └── skills/                      # [active] 版本化 Skill 资产（如 shot-list）
 ├── infra/
 │   └── docker/                      # 本地基础设施和完整 Docker Compose
 ├── docs/                            # 架构和扩展边界说明
 ├── tests/                           # 跨服务、契约和端到端测试位置
-├── scripts/                         # 冒烟脚本（smoke-p0a.sh、smoke-p0b.sh、smoke-p1.sh）
+├── scripts/                         # 冒烟脚本（smoke-p0a.sh ~ smoke-p3.sh）
 ├── .env.example                     # 本地环境变量模板
 ├── package.json                     # 根脚本和工具依赖
 ├── pnpm-workspace.yaml              # pnpm workspace 范围
