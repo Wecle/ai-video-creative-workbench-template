@@ -300,9 +300,14 @@ export const realtimeStreamEventSchema = z.discriminatedUnion("type", [
 ]);
 export type RealtimeStreamEvent = z.infer<typeof realtimeStreamEventSchema>;
 
-export const realtimeTicketRequestSchema = z.strictObject({
-  runId: z.string().uuid(),
-});
+export const realtimeTicketRequestSchema = z.union([
+  z.strictObject({
+    runId: z.string().uuid(),
+  }),
+  z.strictObject({
+    agentRunId: z.string().uuid(),
+  }),
+]);
 export type RealtimeTicketRequest = z.infer<typeof realtimeTicketRequestSchema>;
 
 export const realtimeTicketResponseSchema = z.strictObject({
@@ -316,3 +321,291 @@ export type RealtimeTicketResponse = z.infer<
 
 export * from "./assets";
 export * from "./media";
+
+// ==========================================
+// Agent Loop schemas and types
+// ==========================================
+
+export const AGENT_PATCH_MAX_OPS = 50;
+
+export const canvasPatchAddNodeOpSchema = z.strictObject({
+  op: z.literal("addNode"),
+  id: canvasIdSchema,
+  type: z.string().min(1).max(100),
+  version: z.number().int().positive().optional(),
+  title: z.string().min(1).max(200).optional(),
+  position: z.strictObject({
+    x: z.number(),
+    y: z.number(),
+  }),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const canvasPatchUpdateConfigOpSchema = z.strictObject({
+  op: z.literal("updateConfig"),
+  id: canvasIdSchema,
+  patch: z.record(z.string(), z.unknown()),
+});
+
+export const canvasPatchConnectOpSchema = z.strictObject({
+  op: z.literal("connect"),
+  source: canvasIdSchema,
+  sourceHandle: z.string().min(1).max(100),
+  target: canvasIdSchema,
+  targetHandle: z.string().min(1).max(100),
+});
+
+export const canvasPatchOpSchema = z.discriminatedUnion("op", [
+  canvasPatchAddNodeOpSchema,
+  canvasPatchUpdateConfigOpSchema,
+  canvasPatchConnectOpSchema,
+]);
+
+export const canvasPatchSchema = z.strictObject({
+  summary: z.string().min(1).max(200),
+  ops: z.array(canvasPatchOpSchema).min(1).max(AGENT_PATCH_MAX_OPS),
+});
+
+export type CanvasPatchOp = z.infer<typeof canvasPatchOpSchema>;
+export type CanvasPatch = z.infer<typeof canvasPatchSchema>;
+
+export const agentLoopStartRequestSchema = z.strictObject({
+  projectId: z.string().uuid(),
+  canvasId: z.string().uuid(),
+  canvasVersion: z.number().int().nonnegative(),
+  prompt: z.string().trim().min(1).max(10000),
+  profileId: z.string().min(1).max(64).optional(),
+  selectedSkills: z.array(z.string().min(1).max(64)).max(5).optional(),
+  selectedNodeIds: z.array(canvasIdSchema).max(50).optional(),
+});
+export type AgentLoopStartRequest = z.infer<typeof agentLoopStartRequestSchema>;
+
+export const agentLoopRunStatusSchema = z.enum([
+  "running",
+  "waiting_approval",
+  "completed",
+  "failed",
+]);
+export type AgentLoopRunStatus = z.infer<typeof agentLoopRunStatusSchema>;
+
+export const agentLoopOutcomeSchema = z.enum([
+  "finished",
+  "approval_timeout",
+  "budget_exceeded",
+  "max_steps",
+]);
+export type AgentLoopOutcome = z.infer<typeof agentLoopOutcomeSchema>;
+
+export const agentLoopProposalStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+  "timeout",
+]);
+export type AgentLoopProposalStatus = z.infer<
+  typeof agentLoopProposalStatusSchema
+>;
+
+export const agentLoopProposalResultSchema = z.strictObject({
+  ok: z.boolean(),
+  summary: z.string(),
+  patch: canvasPatchSchema.optional(),
+});
+export type AgentLoopProposalResult = z.infer<
+  typeof agentLoopProposalResultSchema
+>;
+
+export const agentLoopProposalSchema = z.strictObject({
+  toolCallId: z.string().min(1).max(128),
+  toolName: z.string().min(1).max(128),
+  input: z.record(z.string(), z.unknown()),
+  summary: z.string(),
+  risk: z.enum(["read", "write", "expensive", "destructive"]),
+  status: agentLoopProposalStatusSchema,
+  result: agentLoopProposalResultSchema.optional(),
+  createdAt: z.string().optional(),
+});
+export type AgentLoopProposal = z.infer<typeof agentLoopProposalSchema>;
+
+export const agentLoopStepSchema = z.strictObject({
+  stepId: z.string().min(1).max(64),
+  index: z.number().int().nonnegative(),
+  text: z.string(),
+  finishReason: z.string().optional(),
+  toolCalls: z
+    .array(
+      z.strictObject({
+        toolCallId: z.string(),
+        toolName: z.string(),
+        input: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .optional(),
+});
+export type AgentLoopStep = z.infer<typeof agentLoopStepSchema>;
+
+export const agentLoopRunSchema = z.strictObject({
+  id: z.string().uuid(),
+  profileId: z.string().min(1).max(64),
+  projectId: z.string().uuid(),
+  canvasId: z.string().uuid(),
+  canvasVersion: z.number().int().nonnegative(),
+  status: agentLoopRunStatusSchema,
+  outcome: agentLoopOutcomeSchema.nullable().optional(),
+  error: z.string().nullable().optional(),
+  createdAt: z.string(),
+  completedAt: z.string().nullable().optional(),
+  steps: z.array(agentLoopStepSchema),
+  proposals: z.array(agentLoopProposalSchema),
+});
+export type AgentLoopRun = z.infer<typeof agentLoopRunSchema>;
+
+export const agentLoopApprovalRequestSchema = z.strictObject({
+  toolCallId: z.string().min(1).max(128),
+  decision: z.enum(["approve", "reject"]),
+});
+export type AgentLoopApprovalRequest = z.infer<
+  typeof agentLoopApprovalRequestSchema
+>;
+
+export const agentStarterSchema = z.strictObject({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(100),
+  prompt: z.string().min(1).max(1000),
+});
+export type AgentStarter = z.infer<typeof agentStarterSchema>;
+
+export const agentProfileSummarySchema = z.strictObject({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  starters: z.array(agentStarterSchema),
+});
+export type AgentProfileSummary = z.infer<typeof agentProfileSummarySchema>;
+
+export function agentEventsChannel(runId: string): string {
+  return `agent-events:${runId}`;
+}
+
+export function agentEventsSeqKey(runId: string): string {
+  return `agent-events:${runId}:seq`;
+}
+
+export const agentRunStatusEventSchema = z.strictObject({
+  type: z.literal("agent.run.status"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  status: agentLoopRunStatusSchema,
+  outcome: agentLoopOutcomeSchema.optional(),
+  error: z.string().nullable().optional(),
+});
+export type AgentRunStatusEvent = z.infer<typeof agentRunStatusEventSchema>;
+
+export const agentStepStartedEventSchema = z.strictObject({
+  type: z.literal("agent.step.started"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  stepId: z.string().min(1).max(64),
+  index: z.number().int().nonnegative(),
+  attempt: z.number().int().positive(),
+});
+export type AgentStepStartedEvent = z.infer<typeof agentStepStartedEventSchema>;
+
+export const agentTextDeltaEventSchema = z.strictObject({
+  type: z.literal("agent.text.delta"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  stepId: z.string().min(1).max(64),
+  attempt: z.number().int().positive(),
+  text: z.string().max(4096),
+});
+export type AgentTextDeltaEvent = z.infer<typeof agentTextDeltaEventSchema>;
+
+export const agentStepCompletedEventSchema = z.strictObject({
+  type: z.literal("agent.step.completed"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  stepId: z.string().min(1).max(64),
+  text: z.string(),
+  finishReason: z.string(),
+});
+export type AgentStepCompletedEvent = z.infer<
+  typeof agentStepCompletedEventSchema
+>;
+
+export const agentToolProposedEventSchema = z.strictObject({
+  type: z.literal("agent.tool.proposed"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  proposal: agentLoopProposalSchema,
+});
+export type AgentToolProposedEvent = z.infer<
+  typeof agentToolProposedEventSchema
+>;
+
+export const agentToolDecidedEventSchema = z.strictObject({
+  type: z.literal("agent.tool.decided"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  toolCallId: z.string().min(1).max(128),
+  decision: z.enum(["approved", "rejected", "timeout"]),
+});
+export type AgentToolDecidedEvent = z.infer<typeof agentToolDecidedEventSchema>;
+
+export const agentToolResultEventSchema = z.strictObject({
+  type: z.literal("agent.tool.result"),
+  runId: z.string().uuid(),
+  seq: z.number().int().positive(),
+  toolCallId: z.string().min(1).max(128),
+  toolName: z.string().min(1).max(128),
+  ok: z.boolean(),
+  summary: z.string(),
+  patch: canvasPatchSchema.optional(),
+});
+export type AgentToolResultEvent = z.infer<typeof agentToolResultEventSchema>;
+
+export const agentEventSchema = z.discriminatedUnion("type", [
+  agentRunStatusEventSchema,
+  agentStepStartedEventSchema,
+  agentTextDeltaEventSchema,
+  agentStepCompletedEventSchema,
+  agentToolProposedEventSchema,
+  agentToolDecidedEventSchema,
+  agentToolResultEventSchema,
+]);
+export type AgentEvent = z.infer<typeof agentEventSchema>;
+
+export const agentSnapshotEventSchema = z.strictObject({
+  type: z.literal("snapshot"),
+  runId: z.string().uuid(),
+  seq: z.number().int().nonnegative(),
+  run: agentLoopRunSchema,
+});
+export type AgentSnapshotEvent = z.infer<typeof agentSnapshotEventSchema>;
+
+export const agentPingEventSchema = z.strictObject({
+  type: z.literal("ping"),
+  seq: z.number().int().nonnegative(),
+});
+export type AgentPingEvent = z.infer<typeof agentPingEventSchema>;
+
+export const agentDoneEventSchema = z.strictObject({
+  type: z.literal("done"),
+  status: agentLoopRunStatusSchema,
+  outcome: agentLoopOutcomeSchema.optional(),
+});
+export type AgentDoneEvent = z.infer<typeof agentDoneEventSchema>;
+
+export const agentStreamEventSchema = z.discriminatedUnion("type", [
+  agentSnapshotEventSchema,
+  agentPingEventSchema,
+  agentDoneEventSchema,
+  agentRunStatusEventSchema,
+  agentStepStartedEventSchema,
+  agentTextDeltaEventSchema,
+  agentStepCompletedEventSchema,
+  agentToolProposedEventSchema,
+  agentToolDecidedEventSchema,
+  agentToolResultEventSchema,
+]);
+export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
