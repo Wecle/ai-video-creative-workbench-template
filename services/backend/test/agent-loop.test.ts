@@ -391,15 +391,15 @@ describe("backend agent loop REST endpoints", () => {
       expect(conflictRes.statusCode).toBe(409);
       expect(conflictRes.json().error).toContain("Proposal is not pending");
 
-      // 4. Non-pending proposal with same decision -> idempotent 202
+      // 4. Non-pending proposal with same decision -> 409
       const duplicateRes = await app.inject({
         method: "POST",
         url: approvalUrl,
         headers: userHeaders,
         payload: { toolCallId: "call-approved", decision: "approve" },
       });
-      expect(duplicateRes.statusCode).toBe(202);
-      expect(duplicateRes.json()).toEqual({ accepted: true });
+      expect(duplicateRes.statusCode).toBe(409);
+      expect(duplicateRes.json().error).toContain("Proposal is not pending");
 
       // 5. Valid pending proposal approval -> 202
       const okRes = await app.inject({
@@ -457,6 +457,22 @@ describe("backend agent loop REST endpoints", () => {
       });
       expect(notWaitingRes.statusCode).toBe(409);
       expect(notWaitingRes.json().error).toContain(
+        "Run is not waiting approval",
+      );
+
+      // 9. Run already completed -> 409
+      await db
+        .update(agent_runs)
+        .set({ status: "completed" })
+        .where(eq(schema.agent_runs.id, runId));
+      const completedRes = await app.inject({
+        method: "POST",
+        url: approvalUrl,
+        headers: userHeaders,
+        payload: { toolCallId: "call-pending", decision: "approve" },
+      });
+      expect(completedRes.statusCode).toBe(409);
+      expect(completedRes.json().error).toContain(
         "Run is not waiting approval",
       );
     } finally {

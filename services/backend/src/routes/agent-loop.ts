@@ -273,6 +273,10 @@ export async function agentLoopRoutes(
         return reply.code(404).send({ error: "Run not found" });
       }
 
+      if (runRow.status !== "waiting_approval") {
+        return reply.code(409).send({ error: "Run is not waiting approval" });
+      }
+
       const state = (runRow.state ?? {}) as {
         proposals?: AgentLoopProposal[];
       };
@@ -284,17 +288,7 @@ export async function agentLoopRoutes(
       }
 
       if (proposal.status !== "pending") {
-        const isDuplicateSameDecision =
-          (proposal.status === "approved" && decision === "approve") ||
-          (proposal.status === "rejected" && decision === "reject");
-        if (isDuplicateSameDecision) {
-          return reply.code(202).send({ accepted: true });
-        }
         return reply.code(409).send({ error: "Proposal is not pending" });
-      }
-
-      if (runRow.status !== "waiting_approval") {
-        return reply.code(409).send({ error: "Run is not waiting approval" });
       }
 
       try {
