@@ -1,15 +1,17 @@
 import { ApplicationFailure, Context } from "@temporalio/activity";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema } from "@creative/database";
 import { applyPatch, docFromSnapshot } from "@creative/canvas-doc";
-import type { CanvasSnapshot } from "@creative/contracts";
+import { canvasPatchSchema, type CanvasSnapshot } from "@creative/contracts";
 import {
   buildContext,
   createIntentRouter,
-  resolveProfile,
 } from "@creative/agent-core/pure";
+import { createToolRegistry, resolveProfile } from "@creative/agent-core";
 import {
+  createBuiltinToolProvider,
+  createSkillToolProvider,
   llmStep,
   loadSkills,
   type ModelResolver,
@@ -132,10 +134,40 @@ export function createAgentLoopActivities({
       });
       heartbeat();
 
-      const model = modelResolver.resolve({
+      const [row] = await db
+        .select({ profileId: schema.agent_runs.profileId })
+        .from(schema.agent_runs)
+        .where(eq(schema.agent_runs.id, input.runId));
+
+      const profile = row ? resolveProfile(row.profileId) : undefined;
+      const allowedSkills = profile?.skills ?? [];
+
+      let skillsMap: ReturnType<typeof loadSkills>;
+      try {
+        skillsMap = loadSkills(skillsDir);
+      } catch {
+        skillsMap = new Map();
+      }
+
+      const toolRegistry = createToolRegistry([
+        createBuiltinToolProvider(),
+        createSkillToolProvider(skillsMap, allowedSkills),
+      ]);
+
+      const modelRef = profile?.defaultModel ?? {
         provider: "mock",
         modelId: "mock",
-      });
+      };
+
+      let model;
+      try {
+        model = modelResolver.resolve(modelRef);
+      } catch (err: unknown) {
+        throw ApplicationFailure.nonRetryable(
+          `Failed to resolve model provider '${modelRef.provider}': ${err instanceof Error ? err.message : String(err)}`,
+          "ModelRequestError",
+        );
+      }
 
       let stepRes;
       try {
@@ -148,6 +180,7 @@ export function createAgentLoopActivities({
           messages: input.messages,
           tools: input.tools,
           model,
+          toolRegistry,
           abortSignal,
           events: {
             onTextDelta: async (evt) => {
@@ -171,16 +204,11 @@ export function createAgentLoopActivities({
             "ModelRequestError",
           );
         }
-        throw err;
+        throw ApplicationFailure.retryable(
+          "Model request failed, retrying",
+          "ModelRetryableError",
+        );
       }
-
-      await publisher.publish({
-        type: "agent.step.completed",
-        runId: input.runId,
-        stepId: input.stepId,
-        text: stepRes.text,
-        finishReason: stepRes.finishReason,
-      });
 
       return {
         text: stepRes.text,
@@ -195,6 +223,16 @@ export function createAgentLoopActivities({
       toolCall,
     }: PrepareToolActivityInput): Promise<PrepareToolActivityResult> {
       if (toolCall.toolName === "canvas.applyPatch") {
+        const parsed = canvasPatchSchema.safeParse(toolCall.input);
+        if (!parsed.success) {
+          return {
+            ok: false,
+            code: "invalid_input",
+            summary: "Invalid canvas patch input: schema validation failed",
+          };
+        }
+        const patch = parsed.data;
+
         const [row] = await db
           .select({ canvasSnapshot: schema.agent_runs.canvasSnapshot })
           .from(schema.agent_runs)
@@ -210,8 +248,7 @@ export function createAgentLoopActivities({
 
         const snapshot = row.canvasSnapshot as CanvasSnapshot;
         const doc = docFromSnapshot(snapshot);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = applyPatch(doc, "agent", toolCall.input as any);
+        const result = applyPatch(doc, "agent", patch);
         if (!result.ok) {
           return {
             ok: false,
@@ -221,7 +258,7 @@ export function createAgentLoopActivities({
         }
         return {
           ok: true,
-          summary: (toolCall.input.summary as string) ?? "Apply canvas patch",
+          summary: patch.summary || "Apply canvas patch",
         };
       }
 
@@ -236,6 +273,7 @@ export function createAgentLoopActivities({
     },
 
     async executeTool({
+      runId,
       toolCall,
     }: ExecuteToolActivityInput): Promise<ExecuteToolActivityResult> {
       if (toolCall.toolName === "canvas.applyPatch") {
@@ -248,6 +286,19 @@ export function createAgentLoopActivities({
 
       if (toolCall.toolName === "skill.load") {
         const skillName = String(toolCall.input.name ?? "");
+        const [row] = await db
+          .select({ profileId: schema.agent_runs.profileId })
+          .from(schema.agent_runs)
+          .where(eq(schema.agent_runs.id, runId));
+
+        const profile = row ? resolveProfile(row.profileId) : undefined;
+        if (profile && !profile.skills.includes(skillName)) {
+          return {
+            ok: false,
+            summary: `Skill '${skillName}' is not allowed for profile '${profile.id}'`,
+          };
+        }
+
         try {
           const skillsMap = loadSkills(skillsDir);
           const skill = skillsMap.get(skillName);
@@ -290,6 +341,7 @@ export function createAgentLoopActivities({
       events,
     }: RecordProgressActivityInput): Promise<void> {
       // 1. UPDATE database first: state_version < version ensures idempotency & ordering
+      // AND status NOT IN ('completed', 'failed') ensures terminal status cannot be overwritten
       await db
         .update(schema.agent_runs)
         .set({
@@ -307,6 +359,7 @@ export function createAgentLoopActivities({
           and(
             eq(schema.agent_runs.id, runId),
             lt(schema.agent_runs.stateVersion, version),
+            sql`${schema.agent_runs.status} NOT IN ('completed', 'failed')`,
           ),
         );
 

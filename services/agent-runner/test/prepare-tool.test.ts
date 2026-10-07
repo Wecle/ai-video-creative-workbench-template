@@ -50,7 +50,7 @@ describe("prepareTool and executeTool activities", () => {
     const id = randomUUID();
     await testDb.client`
       INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
-      VALUES (${id}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-partner', 'Patch', 1, ${JSON.stringify(snapshot)}::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+      VALUES (${id}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Patch', 1, ${JSON.stringify(snapshot)}::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
     return id;
   }
 
@@ -179,5 +179,79 @@ describe("prepareTool and executeTool activities", () => {
 
     expect(skillRes.ok).toBe(true);
     expect(skillRes.summary).toContain("Shot List");
+  });
+
+  it("prepareTool returns ok:false with invalid_input for malformed patch input without throwing (B4)", async () => {
+    const runId = await createRun();
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher: dummyPublisher,
+      skillsDir,
+      modelResolver: createModelResolver(),
+    });
+
+    // 1. Missing ops
+    const res1 = await activities.prepareTool({
+      runId,
+      toolCall: {
+        toolCallId: "c-bad1",
+        toolName: "canvas.applyPatch",
+        input: { summary: "x" },
+      },
+    });
+    expect(res1.ok).toBe(false);
+    expect(res1.code).toBe("invalid_input");
+
+    // 2. Unknown op
+    const res2 = await activities.prepareTool({
+      runId,
+      toolCall: {
+        toolCallId: "c-bad2",
+        toolName: "canvas.applyPatch",
+        input: { summary: "x", ops: [{ op: "unknownOp" }] },
+      },
+    });
+    expect(res2.ok).toBe(false);
+    expect(res2.code).toBe("invalid_input");
+
+    // 3. addNode missing position
+    const res3 = await activities.prepareTool({
+      runId,
+      toolCall: {
+        toolCallId: "c-bad3",
+        toolName: "canvas.applyPatch",
+        input: {
+          summary: "x",
+          ops: [{ op: "addNode", id: "n-bad", type: "text" }],
+        },
+      },
+    });
+    expect(res3.ok).toBe(false);
+    expect(res3.code).toBe("invalid_input");
+  });
+
+  it("executeTool rejects skill not allowed for profile (S4)", async () => {
+    const runId = randomUUID();
+    await testDb.client`
+      INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Test', 1, '{"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher: dummyPublisher,
+      skillsDir,
+      modelResolver: createModelResolver(),
+    });
+
+    const res = await activities.executeTool({
+      runId,
+      toolCall: {
+        toolCallId: "c-disallowed",
+        toolName: "skill.load",
+        input: { name: "disallowed-skill" },
+      },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.summary).toContain("not allowed for profile");
   });
 });

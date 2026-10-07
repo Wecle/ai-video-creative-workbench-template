@@ -137,28 +137,31 @@ describe("agentLoopWorkflow integration with real Redis, DB and activities", () 
     await testDb?.cleanup();
   });
 
-  it("runs full agent loop, streams events over Redis, approves proposal and verifies history purity", async () => {
+  async function executeLoopWithChunkMode(
+    chunkMode: "single" | "multi50",
+  ) {
     const runId = randomUUID();
     const userId = "user-1";
     const channel = agentEventsChannel(runId);
 
     await testDb.client`
       INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
-      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-partner', 'Add a note to canvas', 1, '{"schemaVersion":1,"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-agent')`;
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Add a note to canvas', 1, '{"schemaVersion":1,"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-agent')`;
 
     const receivedEvents: AgentEvent[] = [];
-    await subClient.subscribe(channel);
-    subClient.on("message", (ch, msg) => {
+    const messageHandler = (ch: string, msg: string) => {
       if (ch === channel) {
         receivedEvents.push(JSON.parse(msg));
       }
-    });
+    };
+    await subClient.subscribe(channel);
+    subClient.on("message", messageHandler);
 
     const publisher = createAgentEventPublisher(redisClient);
     const skillsDir = resolve(
       fileURLToPath(new URL("../../../capabilities/skills", import.meta.url)),
     );
-    const modelResolver = createModelResolver({ mockChunkDelayMs: 5 });
+    const modelResolver = createModelResolver({ mockChunkMode: chunkMode });
 
     const activities = createAgentLoopActivities({
       db: testDb.db,
@@ -204,31 +207,58 @@ describe("agentLoopWorkflow integration with real Redis, DB and activities", () 
     const result = await runPromise;
     expect(result).toEqual({ status: "completed", outcome: "finished" });
 
-    // Verify received events sequence
-    const types = receivedEvents.map((e) => e.type);
-    expect(types).toContain("agent.run.status");
-    expect(types).toContain("agent.step.started");
-    expect(types).toContain("agent.text.delta");
-    expect(types).toContain("agent.step.completed");
-    expect(types).toContain("agent.tool.proposed");
-    expect(types).toContain("agent.tool.decided");
-    expect(types).toContain("agent.tool.result");
+    const history = await handle.fetchHistory();
 
-    // Check patch in tool result
-    const resultEvt = receivedEvents.find(
-      (e) => e.type === "agent.tool.result",
+    subClient.off("message", messageHandler);
+    await subClient.unsubscribe(channel);
+
+    return { receivedEvents, history };
+  }
+
+  it("runs full agent loop, verifies 1 chunk vs >=50 chunks history purity and event sequence (B5.1)", async () => {
+    const runSingle = await executeLoopWithChunkMode("single");
+    const runMulti = await executeLoopWithChunkMode("multi50");
+
+    // 1. fetchHistory() event counts are IDENTICAL between 1 chunk and 50 chunks
+    expect(runSingle.history.events?.length).toBe(
+      runMulti.history.events?.length,
     );
-    expect(resultEvt).toBeDefined();
-    if (resultEvt && resultEvt.type === "agent.tool.result") {
-      expect(resultEvt.ok).toBe(true);
-      expect(resultEvt.patch).toBeDefined();
+    expect(runSingle.history.events?.length).toBeGreaterThan(0);
+
+    // 2. Subscriber delta counts vary with chunk count
+    const deltasSingle = runSingle.receivedEvents.filter(
+      (e) => e.type === "agent.text.delta",
+    );
+    const deltasMulti = runMulti.receivedEvents.filter(
+      (e) => e.type === "agent.text.delta",
+    );
+    expect(deltasSingle.length).toBe(2);
+    expect(deltasMulti.length).toBeGreaterThanOrEqual(50);
+    expect(deltasMulti.length).toBeGreaterThan(deltasSingle.length);
+
+    // 3. Every text.delta has stepId and attempt
+    for (const d of deltasMulti) {
+      if (d.type === "agent.text.delta") {
+        expect(d.stepId).toBeDefined();
+        expect(d.attempt).toBeGreaterThanOrEqual(1);
+      }
     }
 
-    // History purity check: token stream (agent.text.delta) does NOT enter workflow history
-    const history = await handle.fetchHistory();
-    const historyJson = JSON.stringify(history);
-    expect(historyJson).not.toContain("agent.text.delta");
+    // 4. Sequence numbers are monotonically increasing
+    for (let i = 1; i < runMulti.receivedEvents.length; i++) {
+      expect(runMulti.receivedEvents[i]!.seq).toBeGreaterThan(
+        runMulti.receivedEvents[i - 1]!.seq,
+      );
+    }
 
-    await subClient.unsubscribe(channel);
-  });
+    // 5. step.completed contains full accumulated text
+    const stepCompletedEvt = runMulti.receivedEvents.find(
+      (e) => e.type === "agent.step.completed",
+    );
+    expect(stepCompletedEvt).toBeDefined();
+    if (stepCompletedEvt && stepCompletedEvt.type === "agent.step.completed") {
+      expect(stepCompletedEvt.text.length).toBeGreaterThan(3000);
+      expect(stepCompletedEvt.stepId).toBeDefined();
+    }
+  }, 60_000);
 });

@@ -6,7 +6,10 @@ import { schema } from "@creative/database";
 import { Redis } from "ioredis";
 import { startTelemetry } from "@creative/observability";
 import { AGENT_TASK_QUEUE } from "@creative/workflows/constants";
-import { createModelResolver } from "@creative/agent-core/runtime";
+import {
+  createModelResolver,
+  loadSkills,
+} from "@creative/agent-core/runtime";
 import { createActivities } from "./activities";
 import { createAgentLoopActivities } from "./agent-loop-activities";
 import { createAgentEventPublisher } from "./events";
@@ -18,13 +21,13 @@ const READY_FILE = "/tmp/agent-runner.ready";
 const config = loadConfig();
 const telemetry = startTelemetry("creative-agent-runner");
 
-// Validate skills directory at startup
-if (
-  !existsSync(config.agentSkillsDir) ||
-  readdirSync(config.agentSkillsDir).length === 0
-) {
+// Validate skills directory and required skills at startup (S10)
+try {
+  loadSkills(config.agentSkillsDir, ["shot-list"]);
+} catch (err) {
   console.error(
-    `Skills directory missing or empty at ${config.agentSkillsDir}`,
+    `Skills validation failed for ${config.agentSkillsDir}:`,
+    err,
   );
   process.exit(1);
 }

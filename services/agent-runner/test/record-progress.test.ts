@@ -37,7 +37,7 @@ describe("recordProgress activity", () => {
   async function createRun(id = randomUUID()) {
     await testDb.client`
       INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, state_version, workflow_id)
-      VALUES (${id}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-partner', 'Add note', 1, '{"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 0, 'wf-1')`;
+      VALUES (${id}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Add note', 1, '{"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 0, 'wf-1')`;
     return id;
   }
 
@@ -160,6 +160,48 @@ describe("recordProgress activity", () => {
       .select()
       .from(schema.agent_runs)
       .where(eq(schema.agent_runs.id, runId));
+    expect(row?.status).toBe("completed");
+    expect(row?.outcome).toBe("finished");
+    expect(row?.stateVersion).toBe(5);
+  });
+
+  it("does not overwrite terminal status (completed or failed) with subsequent progress (S5)", async () => {
+    const runId = await createRun();
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher: {
+        async publish() {
+          return 1;
+        },
+      },
+      skillsDir: "/tmp",
+      modelResolver: createModelResolver(),
+    });
+
+    // 1. Complete the run
+    await activities.recordProgress({
+      runId,
+      version: 5,
+      status: "completed",
+      outcome: "finished",
+      state: { steps: [], proposals: [] },
+      events: [],
+    });
+
+    // 2. Attempt to update it back to running with higher version
+    await activities.recordProgress({
+      runId,
+      version: 6,
+      status: "running",
+      state: { steps: [], proposals: [] },
+      events: [],
+    });
+
+    const [row] = await testDb.db
+      .select()
+      .from(schema.agent_runs)
+      .where(eq(schema.agent_runs.id, runId));
+    // Status remains completed, not running!
     expect(row?.status).toBe("completed");
     expect(row?.outcome).toBe("finished");
     expect(row?.stateVersion).toBe(5);

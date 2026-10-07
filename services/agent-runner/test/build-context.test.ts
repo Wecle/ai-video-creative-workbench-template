@@ -51,7 +51,7 @@ describe("buildContext activity", () => {
 
     await testDb.client`
       INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
-      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-partner', 'Create shot list /shot-list', 1, ${JSON.stringify(initialSnapshot)}::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Create shot list /shot-list', 1, ${JSON.stringify(initialSnapshot)}::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
 
     // Mutate the canvas in canvases table
     await testDb.client`
@@ -98,7 +98,7 @@ describe("buildContext activity", () => {
 
     await testDb.client`
       INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, route_hints, canvas_version, canvas_snapshot, status, state, workflow_id)
-      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-partner', 'Edit this', ${JSON.stringify(hints)}::jsonb, 1, ${JSON.stringify(snapshot)}::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Edit this', ${JSON.stringify(hints)}::jsonb, 1, ${JSON.stringify(snapshot)}::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
 
     const activities = createAgentLoopActivities({
       db: testDb.db,
@@ -110,5 +110,37 @@ describe("buildContext activity", () => {
     const ctx = await activities.buildContext({ runId });
     expect(ctx.system).toContain("valid-node");
     expect(ctx.system).not.toContain("ghost-node-404");
+  });
+
+  it("does not leak SKILL.md body into system prompt (M6 progressive disclosure)", async () => {
+    const fs = await import("node:fs/promises");
+    const skillPath = resolve(skillsDir, "shot-list/SKILL.md");
+    const content = await fs.readFile(skillPath, "utf-8");
+    const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    const runId = randomUUID();
+    await testDb.client`
+      INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'creative-assistant', 'Create shot list /shot-list', 1, '{"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher: dummyPublisher,
+      skillsDir,
+      modelResolver: createModelResolver(),
+    });
+
+    const ctx = await activities.buildContext({ runId });
+
+    const bodyLines = lines.filter(
+      (l) =>
+        !l.startsWith("#") &&
+        !l.includes("Turn a short story beat into a numbered shot list"),
+    );
+
+    expect(bodyLines.length).toBeGreaterThan(0);
+    for (const line of bodyLines) {
+      expect(ctx.system).not.toContain(line);
+    }
   });
 });
