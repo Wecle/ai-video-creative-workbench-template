@@ -206,4 +206,61 @@ describe("recordProgress activity", () => {
     expect(row?.outcome).toBe("finished");
     expect(row?.stateVersion).toBe(5);
   });
+
+  it("ensures database already contains step state when step.completed event is published (M-g)", async () => {
+    const runId = await createRun();
+    let dbHadStepAtPublication = false;
+
+    const publisher: AgentEventPublisher = {
+      async publish(event) {
+        if (event.type === "agent.step.completed") {
+          const [row] = await testDb.db
+            .select()
+            .from(schema.agent_runs)
+            .where(eq(schema.agent_runs.id, runId));
+          const steps = (row?.state as { steps?: unknown[] })?.steps;
+          if (Array.isArray(steps) && steps.length > 0) {
+            dbHadStepAtPublication = true;
+          }
+        }
+        return 1;
+      },
+    };
+
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher,
+      skillsDir: "/tmp",
+      modelResolver: createModelResolver(),
+    });
+
+    const stepPayload = {
+      stepId: "s0",
+      index: 0,
+      text: "Step 0 completed",
+      toolCalls: [],
+      finishReason: "stop",
+      usage: { totalTokens: 10 },
+    };
+
+    await activities.recordProgress({
+      runId,
+      version: 1,
+      status: "running",
+      state: { steps: [stepPayload], proposals: [] },
+      events: [
+        {
+          type: "agent.step.completed",
+          runId,
+          seq: 1,
+          stepId: "s0",
+          index: 0,
+          finishReason: "stop",
+          usage: { totalTokens: 10 },
+        },
+      ],
+    });
+
+    expect(dbHadStepAtPublication).toBe(true);
+  });
 });

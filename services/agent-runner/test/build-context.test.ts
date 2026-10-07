@@ -162,4 +162,33 @@ describe("buildContext activity", () => {
 
     await expect(activities.buildContext({ runId })).rejects.toThrow();
   });
+
+  it("profile with skills: [] does not include shot-list in prompt and rejects skill.load (M-c)", async () => {
+    const runId = randomUUID();
+    await testDb.client`
+      INSERT INTO agent_runs (id, workspace_id, project_id, canvas_id, profile_id, prompt, canvas_version, canvas_snapshot, status, state, workflow_id)
+      VALUES (${runId}, ${workspaceId}, ${projectId}, ${canvasId}, 'readonly-assistant', 'Analyze canvas /shot-list', 1, '{"nodes":[],"edges":[]}'::jsonb, 'running', '{"steps":[],"proposals":[]}'::jsonb, 'wf-1')`;
+
+    const activities = createAgentLoopActivities({
+      db: testDb.db,
+      publisher: dummyPublisher,
+      skillsDir,
+      modelResolver: createModelResolver(),
+    });
+
+    const ctx = await activities.buildContext({ runId });
+    expect(ctx.system).not.toContain("shot-list");
+    expect(ctx.system).not.toContain("Available Skills");
+
+    const execRes = await activities.executeTool({
+      runId,
+      toolCall: {
+        toolCallId: "c-disallowed-skill",
+        toolName: "skill.load",
+        input: { name: "shot-list" },
+      },
+    });
+    expect(execRes.ok).toBe(false);
+    expect(execRes.summary).toContain("not allowed for profile");
+  });
 });
