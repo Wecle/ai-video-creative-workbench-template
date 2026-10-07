@@ -1,12 +1,15 @@
 import {
   createProjectResponseSchema,
   getCanvasResponseSchema,
+  getCanvasRunResponseSchema,
   healthSchema,
   meResponseSchema,
   projectListResponseSchema,
   saveCanvasResponseSchema,
+  startCanvasRunResponseSchema,
   type CreateProjectRequest,
   type SaveCanvasRequest,
+  type StartCanvasRunRequest,
 } from "@creative/contracts";
 
 export type ApiClientOptions = {
@@ -127,6 +130,26 @@ export function createApiClient(
           body: input,
           timeoutMs: 20000,
         }),
+      ),
+    startCanvasRun: async (
+      projectId: string,
+      canvasId: string,
+      input?: StartCanvasRunRequest,
+    ) =>
+      startCanvasRunResponseSchema.parse(
+        await request("POST", canvasPath(projectId, canvasId) + "/runs", {
+          auth: true,
+          body: input ?? {},
+        }),
+      ),
+    getCanvasRun: async (projectId: string, canvasId: string, runId: string) =>
+      getCanvasRunResponseSchema.parse(
+        await get(
+          canvasPath(projectId, canvasId) +
+            "/runs/" +
+            encodeURIComponent(runId),
+          { auth: true },
+        ),
       ),
   };
 }

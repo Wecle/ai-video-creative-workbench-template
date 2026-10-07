@@ -244,5 +244,41 @@ describe("API client", () => {
       );
       await expect(api.getCanvas(projectId, canvasId)).rejects.toThrow();
     });
+
+    it("startCanvasRun and getCanvasRun validate responses", async () => {
+      const runId = "11111111-1111-4111-8111-111111111111";
+      const run = {
+        id: runId,
+        canvasId,
+        projectId,
+        status: "queued",
+        canvasVersion: 1,
+        createdAt: "2026-10-07T00:00:00.000Z",
+        nodeRuns: [],
+      };
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(json({ run }))
+        .mockResolvedValueOnce(json({ run: { ...run, status: "succeeded" } }));
+      const api = createApiClient("/gateway", fetcher, {
+        getToken: async () => "tok",
+      });
+
+      const started = await api.startCanvasRun(projectId, canvasId, {
+        mockMode: "polling",
+      });
+      expect(started.run.id).toBe(runId);
+      expect(started.run.status).toBe("queued");
+      expect(fetcher.mock.calls[0]![0]).toBe(
+        `/gateway/api/v1/projects/${projectId}/canvases/${canvasId}/runs`,
+      );
+      expect(fetcher.mock.calls[0]![1]?.method).toBe("POST");
+
+      const queried = await api.getCanvasRun(projectId, canvasId, runId);
+      expect(queried.run.status).toBe("succeeded");
+      expect(fetcher.mock.calls[1]![0]).toBe(
+        `/gateway/api/v1/projects/${projectId}/canvases/${canvasId}/runs/${runId}`,
+      );
+    });
   });
 });

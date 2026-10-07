@@ -151,3 +151,64 @@ export type CanvasMeta = z.infer<typeof canvasMetaSchema>;
 export type GetCanvasResponse = z.infer<typeof getCanvasResponseSchema>;
 export type SaveCanvasRequest = z.infer<typeof saveCanvasRequestSchema>;
 export type SaveCanvasResponse = z.infer<typeof saveCanvasResponseSchema>;
+
+export const canvasRunStatusSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+]);
+export const nodeRunStatusSchema = z.enum([
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+]);
+export const startCanvasRunRequestSchema = z.strictObject({
+  mockMode: z.enum(["polling", "callback"]).optional(),
+});
+export const nodeRunSummarySchema = z.object({
+  id: z.uuid(),
+  nodeId: canvasIdSchema,
+  nodeType: z.string().min(1).max(100),
+  provider: z.string().nullable().optional(),
+  externalJobId: z.string().nullable().optional(),
+  status: nodeRunStatusSchema,
+  inputs: z.record(z.string(), z.unknown()).nullable().optional(),
+  outputs: z.record(z.string(), z.unknown()).nullable().optional(),
+  error: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+});
+export const canvasRunSummarySchema = z.object({
+  id: z.uuid(),
+  canvasId: z.uuid(),
+  projectId: z.uuid(),
+  status: canvasRunStatusSchema,
+  canvasVersion: z.number().int().nonnegative(),
+  error: z.string().nullable().optional(),
+  createdBy: z.uuid().nullable().optional(),
+  createdAt: z.string(),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+  nodeRuns: z.array(nodeRunSummarySchema),
+});
+export const startCanvasRunResponseSchema = z.object({
+  run: canvasRunSummarySchema,
+});
+export const getCanvasRunResponseSchema = z.object({
+  run: canvasRunSummarySchema,
+});
+
+export type CanvasRunStatus = z.infer<typeof canvasRunStatusSchema>;
+export type NodeRunStatus = z.infer<typeof nodeRunStatusSchema>;
+export type StartCanvasRunRequest = z.infer<typeof startCanvasRunRequestSchema>;
+export type NodeRunSummary = z.infer<typeof nodeRunSummarySchema>;
+export type CanvasRunSummary = z.infer<typeof canvasRunSummarySchema>;
+export type StartCanvasRunResponse = z.infer<
+  typeof startCanvasRunResponseSchema
+>;
+export type GetCanvasRunResponse = z.infer<typeof getCanvasRunResponseSchema>;
