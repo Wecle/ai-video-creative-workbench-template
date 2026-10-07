@@ -5,7 +5,7 @@ import {
   agentEventsSeqKey,
 } from "@creative/contracts";
 
-type DistributiveOmit<T, K extends keyof any> = T extends any
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
 

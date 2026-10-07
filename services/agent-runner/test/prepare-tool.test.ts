@@ -120,7 +120,7 @@ describe("prepareTool and executeTool activities", () => {
       .select()
       .from(schema.agent_runs)
       .where(eq(schema.agent_runs.id, runId));
-    expect((row?.canvasSnapshot as any).nodes).toHaveLength(1);
+    expect((row?.canvasSnapshot as { nodes: unknown[] }).nodes).toHaveLength(1);
   });
 
   it("executeTool returns patch without writing to database", async () => {
@@ -156,7 +156,7 @@ describe("prepareTool and executeTool activities", () => {
       .select()
       .from(schema.canvases)
       .where(eq(schema.canvases.id, canvasId));
-    expect((canvas?.snapshot as any).nodes).toHaveLength(0);
+    expect((canvas?.snapshot as { nodes: unknown[] }).nodes).toHaveLength(0);
   });
 
   it("executeTool loads skill content and truncates if overly long", async () => {

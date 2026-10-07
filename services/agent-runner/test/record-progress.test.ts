@@ -89,7 +89,7 @@ describe("recordProgress activity", () => {
       .from(schema.agent_runs)
       .where(eq(schema.agent_runs.id, runId));
     expect(rowV2?.stateVersion).toBe(2);
-    expect((rowV2?.state as any).steps).toHaveLength(1);
+    expect((rowV2?.state as { steps: unknown[] }).steps).toHaveLength(1);
 
     // Retry with same version -> identical row state
     await activities.recordProgress(stepPayload);
@@ -112,7 +112,7 @@ describe("recordProgress activity", () => {
       .from(schema.agent_runs)
       .where(eq(schema.agent_runs.id, runId));
     expect(rowOlder?.stateVersion).toBe(2);
-    expect((rowOlder?.state as any).steps).toHaveLength(1);
+    expect((rowOlder?.state as { steps: unknown[] }).steps).toHaveLength(1);
 
     // Verify published seq is strictly monotonic
     for (let i = 1; i < published.length; i++) {
