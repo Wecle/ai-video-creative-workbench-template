@@ -67,15 +67,25 @@ rm -f "$save_body"
 CANVAS_VERSION=$(jq -r .version "$BODY")
 check "P3.3b canvas version is 1" "1" "$CANVAS_VERSION"
 
+# Unauthenticated checks
+check "P3.3c unauthenticated request to /api/v1/agent/runs -> 401" 401 \
+  "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$GATEWAY_URL/api/v1/agent/runs" -H 'content-type: application/json' -d '{}')"
+check "P3.3d unauthenticated request to /api/v1/agent/profiles -> 401" 401 \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$GATEWAY_URL/api/v1/agent/profiles")"
+
+# Record initial canvas snapshot
+api "$TOKEN_A" GET "$CPATH" >/dev/null
+CANVAS_SNAP_INIT=$(jq -c .canvas.snapshot "$BODY")
+
 # Non-member and invalid version checks
 echo "== Authorization & validation checks"
 agent_req="$(mktemp)"
-jq -n --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
-  '{canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke test unauthorized"}' > "$agent_req"
+jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
+  '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke test unauthorized"}' > "$agent_req"
 check "P3.4 User B cannot start agent run on User A canvas -> 404" 404 "$(api "$TOKEN_B" POST /api/v1/agent/runs "$agent_req")"
 
-jq -n --arg cid "$CANVAS_ID" --argjson cv 999 \
-  '{canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke test wrong version"}' > "$agent_req"
+jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv 999 \
+  '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke test wrong version"}' > "$agent_req"
 check "P3.5 mismatched canvasVersion -> 409" 409 "$(api "$TOKEN_A" POST /api/v1/agent/runs "$agent_req")"
 rm -f "$agent_req"
 
@@ -83,11 +93,11 @@ rm -f "$agent_req"
 echo "== Run 1: Approval flow"
 RAND_TAG="smoke-$RANDOM"
 start_req="$(mktemp)"
-jq -n --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" --arg p "Please add a text card $RAND_TAG" \
-  '{canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: $p}' > "$start_req"
+jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" --arg p "Please add a text card $RAND_TAG" \
+  '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: $p}' > "$start_req"
 check "P3.6 User A starts agent run -> 202" 202 "$(api "$TOKEN_A" POST /api/v1/agent/runs "$start_req")"
 rm -f "$start_req"
-AGENT_RUN_ID=$(jq -r .agentRun.id "$BODY")
+AGENT_RUN_ID=$(jq -r .run.id "$BODY")
 check "P3.7 agentRunId returned" true "$([ -n "$AGENT_RUN_ID" ] && [ "$AGENT_RUN_ID" != "null" ] && echo true || echo false)"
 
 # Realtime Ticket Authorization & Single-Use Checks
@@ -102,8 +112,8 @@ HTTP_CODE_B=$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $WEB_URL" "$GAT
 check "P3.9 User B cannot stream User A agent run -> 404" 404 "$HTTP_CODE_B"
 
 # User B cannot approve User A run -> 404
-appr_req="$(mktemp)"; jq -n '{proposalId: "p-dummy", decision: "approved"}' > "$appr_req"
-check "P3.10 User B cannot approve User A run -> 404" 404 "$(api "$TOKEN_B" POST "/api/v1/agent/runs/$AGENT_RUN_ID/approval" "$appr_req")"
+appr_req="$(mktemp)"; jq -n '{toolCallId: "call-dummy", decision: "approve"}' > "$appr_req"
+check "P3.10 User B cannot approve User A run -> 404" 404 "$(api "$TOKEN_B" POST "/api/v1/agent/runs/$AGENT_RUN_ID/approvals" "$appr_req")"
 rm -f "$appr_req"
 
 # User A gets ticket
@@ -118,7 +128,7 @@ check "P3.12 SSE with disallowed Origin -> 403" 403 \
 
 # Consume ticket with valid Origin
 HTTP_CODE_1=$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/agent/runs/$AGENT_RUN_ID/events?ticket=$TICKET_A1" || true)
-check "P3.13 first ticket usage succeeds" true "$([ "$HTTP_CODE_1" = "200" ] || [ "$HTTP_CODE_1" = "000" ] && echo true || echo false)"
+check "P3.13 first ticket usage succeeds" "200" "$HTTP_CODE_1"
 
 # Reuse same ticket -> 401 Unauthorized
 HTTP_CODE_REUSE=$(curl -s -o /dev/null -w '%{http_code}' -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/agent/runs/$AGENT_RUN_ID/events?ticket=$TICKET_A1")
@@ -162,19 +172,22 @@ check "P3.17 SSE receives agent.tool.proposed" true "$has_proposal"
 # Pre-approval invariants: canvas snapshot & version unchanged, run waiting_approval
 api "$TOKEN_A" GET "$CPATH" >/dev/null
 CANVAS_VER_PRE=$(jq -r .canvas.version "$BODY")
+CANVAS_SNAP_PRE=$(jq -c .canvas.snapshot "$BODY")
 check "P3.18 canvas version unchanged before approval" "$CANVAS_VERSION" "$CANVAS_VER_PRE"
+check "P3.18b canvas snapshot unchanged before approval" "$CANVAS_SNAP_INIT" "$CANVAS_SNAP_PRE"
 
 api "$TOKEN_A" GET "/api/v1/agent/runs/$AGENT_RUN_ID" >/dev/null
-RUN_STATUS_PRE=$(jq -r .agentRun.status "$BODY")
+RUN_STATUS_PRE=$(jq -r .run.status "$BODY")
 check "P3.19 run status is waiting_approval" "waiting_approval" "$RUN_STATUS_PRE"
-PROPOSAL_ID=$(jq -r '.agentRun.state.activeProposal.id // empty' "$BODY")
-check "P3.20 active proposal exists" true "$([ -n "$PROPOSAL_ID" ] && echo true || echo false)"
+TOOL_CALL_ID=$(jq -r '.run.proposals[-1].toolCallId // empty' "$BODY")
+check "P3.20 active proposal toolCallId exists" true "$([ -n "$TOOL_CALL_ID" ] && echo true || echo false)"
 
 # Optional worker restart check if requested
 if [ "$CHECK_RESTART" = "1" ]; then
   echo "Testing worker restart while waiting for approval..."
   docker compose -f "$ROOT/infra/docker/docker-compose.full.yml" restart agent-runner
   echo "Waiting for agent-runner to become healthy again..."
+  STATUS="unknown"
   for attempt in $(seq 1 30); do
     STATUS=$(docker inspect --format='{{.State.Health.Status}}' creative-agent-runner-1 2>/dev/null || docker inspect --format='{{.State.Health.Status}}' $(docker ps -q -f name=agent-runner) 2>/dev/null || echo "unknown")
     if [ "$STATUS" = "healthy" ]; then
@@ -182,14 +195,15 @@ if [ "$CHECK_RESTART" = "1" ]; then
     fi
     sleep 1
   done
-  echo "agent-runner restart healthy: $STATUS"
+  check "agent-runner container recovered healthy" "healthy" "$STATUS"
 fi
 
 # User A approves the proposal
-echo "User A approves proposal $PROPOSAL_ID..."
+echo "User A approves proposal $TOOL_CALL_ID..."
 appr_body="$(mktemp)"
-jq -n --arg pid "$PROPOSAL_ID" '{proposalId: $pid, decision: "approved"}' > "$appr_body"
-check "P3.21 User A approves proposal -> 200" 200 "$(api "$TOKEN_A" POST "/api/v1/agent/runs/$AGENT_RUN_ID/approval" "$appr_body")"
+jq -n --arg tid "$TOOL_CALL_ID" '{toolCallId: $tid, decision: "approve"}' > "$appr_body"
+check "P3.21 User A approves proposal -> 202" 202 "$(api "$TOKEN_A" POST "/api/v1/agent/runs/$AGENT_RUN_ID/approvals" "$appr_body")"
+check "P3.21b approval response accepted true" "true" "$(jq -r .accepted "$BODY")"
 rm -f "$appr_body"
 
 # Wait for completion in SSE
@@ -227,65 +241,68 @@ wait "$SSE_PID" 2>/dev/null || true
 
 # Assert run completed in DB
 api "$TOKEN_A" GET "/api/v1/agent/runs/$AGENT_RUN_ID" >/dev/null
-RUN_STATUS_POST=$(jq -r .agentRun.status "$BODY")
-RUN_OUTCOME_POST=$(jq -r .agentRun.outcome "$BODY")
+RUN_STATUS_POST=$(jq -r .run.status "$BODY")
+RUN_OUTCOME_POST=$(jq -r .run.outcome "$BODY")
 check "P3.26 run completed in backend" "completed" "$RUN_STATUS_POST"
 check "P3.27 run outcome is finished" "finished" "$RUN_OUTCOME_POST"
 
-# Server canvas version remains unchanged (client applies patch)
+# Server canvas version & snapshot remain unchanged (client applies patch)
 api "$TOKEN_A" GET "$CPATH" >/dev/null
 CANVAS_VER_POST=$(jq -r .canvas.version "$BODY")
+CANVAS_SNAP_POST=$(jq -c .canvas.snapshot "$BODY")
 check "P3.28 canvas version still unchanged on server" "$CANVAS_VERSION" "$CANVAS_VER_POST"
+check "P3.28b canvas snapshot still unchanged on server" "$CANVAS_SNAP_INIT" "$CANVAS_SNAP_POST"
 
 # 2. Run 2: Rejection Flow
 echo "== Run 2: Rejection flow"
 start_reject="$(mktemp)"
-jq -n --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
-  '{canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke reject request"}' > "$start_reject"
+jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
+  '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke reject request"}' > "$start_reject"
 check "P3.29 start second run -> 202" 202 "$(api "$TOKEN_A" POST /api/v1/agent/runs "$start_reject")"
 rm -f "$start_reject"
-REJECT_RUN_ID=$(jq -r .agentRun.id "$BODY")
+REJECT_RUN_ID=$(jq -r .run.id "$BODY")
 
 echo "Waiting for run 2 to reach waiting_approval..."
-REJECT_PROPOSAL_ID=""
+REJECT_TOOL_CALL_ID=""
 for attempt in $(seq 1 30); do
   api "$TOKEN_A" GET "/api/v1/agent/runs/$REJECT_RUN_ID" >/dev/null
-  if [ "$(jq -r .agentRun.status "$BODY")" = "waiting_approval" ]; then
-    REJECT_PROPOSAL_ID=$(jq -r '.agentRun.state.activeProposal.id // empty' "$BODY")
+  if [ "$(jq -r .run.status "$BODY")" = "waiting_approval" ]; then
+    REJECT_TOOL_CALL_ID=$(jq -r '.run.proposals[-1].toolCallId // empty' "$BODY")
     break
   fi
   sleep 0.5
 done
-check "P3.30 run 2 reached waiting_approval" true "$([ -n "$REJECT_PROPOSAL_ID" ] && echo true || echo false)"
+check "P3.30 run 2 reached waiting_approval" true "$([ -n "$REJECT_TOOL_CALL_ID" ] && echo true || echo false)"
 
 rej_body="$(mktemp)"
-jq -n --arg pid "$REJECT_PROPOSAL_ID" '{proposalId: $pid, decision: "rejected"}' > "$rej_body"
-check "P3.31 User A rejects proposal -> 200" 200 "$(api "$TOKEN_A" POST "/api/v1/agent/runs/$REJECT_RUN_ID/approval" "$rej_body")"
+jq -n --arg tid "$REJECT_TOOL_CALL_ID" '{toolCallId: $tid, decision: "reject"}' > "$rej_body"
+check "P3.31 User A rejects proposal -> 202" 202 "$(api "$TOKEN_A" POST "/api/v1/agent/runs/$REJECT_RUN_ID/approvals" "$rej_body")"
+check "P3.31b reject response accepted true" "true" "$(jq -r .accepted "$BODY")"
 rm -f "$rej_body"
 
 echo "Waiting for run 2 to complete..."
 for attempt in $(seq 1 30); do
   api "$TOKEN_A" GET "/api/v1/agent/runs/$REJECT_RUN_ID" >/dev/null
-  if [ "$(jq -r .agentRun.status "$BODY")" = "completed" ]; then
+  if [ "$(jq -r .run.status "$BODY")" = "completed" ]; then
     break
   fi
   sleep 0.5
 done
-check "P3.32 run 2 status is completed" "completed" "$(jq -r .agentRun.status "$BODY")"
-check "P3.33 run 2 outcome is finished" "finished" "$(jq -r .agentRun.outcome "$BODY")"
-REJECT_DECISION=$(jq -r '.agentRun.state.proposals[-1].decision // empty' "$BODY")
-check "P3.34 proposal record decision is rejected" "rejected" "$REJECT_DECISION"
-LAST_TEXT=$(jq -r '.agentRun.state.steps[-1].text // empty' "$BODY")
+check "P3.32 run 2 status is completed" "completed" "$(jq -r .run.status "$BODY")"
+check "P3.33 run 2 outcome is finished" "finished" "$(jq -r .run.outcome "$BODY")"
+REJECT_STATUS=$(jq -r '.run.proposals[-1].status // empty' "$BODY")
+check "P3.34 proposal record status is rejected" "rejected" "$REJECT_STATUS"
+LAST_TEXT=$(jq -r '.run.steps[-1].text // empty' "$BODY")
 check "P3.35 last step contains rejection acknowledgement" true "$([[ "$LAST_TEXT" == *"Understood"* ]] && echo true || echo false)"
 
 # 3. Run 3: Skill Loading
 echo "== Run 3: Skill loading flow"
 start_skill="$(mktemp)"
-jq -n --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
-  '{canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke please use skill for shot-list"}' > "$start_skill"
+jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
+  '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke please use skill for shot-list"}' > "$start_skill"
 check "P3.36 start skill run -> 202" 202 "$(api "$TOKEN_A" POST /api/v1/agent/runs "$start_skill")"
 rm -f "$start_skill"
-SKILL_RUN_ID=$(jq -r .agentRun.id "$BODY")
+SKILL_RUN_ID=$(jq -r .run.id "$BODY")
 
 ticket_req="$(mktemp)"; jq -n --arg id "$SKILL_RUN_ID" '{agentRunId: $id}' > "$ticket_req"
 api "$TOKEN_A" POST /api/v1/realtime-tickets "$ticket_req" >/dev/null
@@ -295,11 +312,11 @@ SKILL_TICKET=$(jq -r .ticket "$BODY")
 curl -N -s -H "Origin: $WEB_URL" "$GATEWAY_URL/api/v1/realtime/agent/runs/$SKILL_RUN_ID/events?ticket=$SKILL_TICKET" > "$SSE_OUT_SKILL" 2>&1 &
 SKILL_SSE_PID=$!
 
-echo "Waiting for skill_load tool result and subsequent proposal..."
+echo "Waiting for skill.load tool result and subsequent proposal..."
 has_skill_res=false
 has_skill_prop=false
 for attempt in $(seq 1 30); do
-  if ! $has_skill_res && grep -q "skill_load" "$SSE_OUT_SKILL" 2>/dev/null && grep -q "shot-list" "$SSE_OUT_SKILL" 2>/dev/null; then
+  if ! $has_skill_res && grep -q "skill\.load" "$SSE_OUT_SKILL" 2>/dev/null && grep -q "shot-list" "$SSE_OUT_SKILL" 2>/dev/null; then
     has_skill_res=true
   fi
   if ! $has_skill_prop && grep -q "event: agent.tool.proposed" "$SSE_OUT_SKILL" 2>/dev/null; then
@@ -311,22 +328,25 @@ for attempt in $(seq 1 30); do
   sleep 0.5
 done
 
-check "P3.37 received skill_load tool result with shot-list" true "$has_skill_res"
-check "P3.38 proposal emitted after skill_load" true "$has_skill_prop"
+check "P3.37 received skill.load tool result with shot-list" true "$has_skill_res"
+check "P3.38 proposal emitted after skill.load" true "$has_skill_prop"
+
+# Order check: skill.load arrives before agent.tool.proposed
+skill_line=$(grep -n "skill\.load" "$SSE_OUT_SKILL" 2>/dev/null | head -n1 | cut -d: -f1)
+prop_line=$(grep -n "event: agent\.tool\.proposed" "$SSE_OUT_SKILL" 2>/dev/null | head -n1 | cut -d: -f1)
+check "P3.38b skill result arrived before proposal" true "$([ -n "$skill_line" ] && [ -n "$prop_line" ] && [ "$skill_line" -lt "$prop_line" ] && echo true || echo false)"
 
 kill "$SKILL_SSE_PID" 2>/dev/null || true
 wait "$SKILL_SSE_PID" 2>/dev/null || true
 
 # 4. SSE Heartbeat & Longevity Check (>= 20s)
 echo "== SSE heartbeat longevity check (>= 20s)"
-ticket_req="$(mktemp)"; jq -n --arg id "$AGENT_RUN_ID" '{agentRunId: $id}' > "$ticket_req"
-# We start another run for heartbeat check or connect to waiting run
 start_hb="$(mktemp)"
-jq -n --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
-  '{canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke heartbeat test"}' > "$start_hb"
+jq -n --arg pid "$PROJECT_ID" --arg cid "$CANVAS_ID" --argjson cv "$CANVAS_VERSION" \
+  '{projectId: $pid, canvasId: $cid, canvasVersion: $cv, profileId: "creative-assistant", prompt: "smoke heartbeat test"}' > "$start_hb"
 api "$TOKEN_A" POST /api/v1/agent/runs "$start_hb" >/dev/null
 rm -f "$start_hb"
-HB_RUN_ID=$(jq -r .agentRun.id "$BODY")
+HB_RUN_ID=$(jq -r .run.id "$BODY")
 
 ticket_req="$(mktemp)"; jq -n --arg id "$HB_RUN_ID" '{agentRunId: $id}' > "$ticket_req"
 api "$TOKEN_A" POST /api/v1/realtime-tickets "$ticket_req" >/dev/null
