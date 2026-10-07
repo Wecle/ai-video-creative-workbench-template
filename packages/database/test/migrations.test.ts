@@ -14,7 +14,9 @@ const expectedTables = [
   "accounts",
   "canvases",
   "jwks",
+  "node_runs",
   "projects",
+  "runs",
   "sessions",
   "users",
   "verifications",
@@ -56,7 +58,9 @@ describe.skipIf(!baseUrl)("migrations", () => {
             ('workspace_members', 'workspace_id'),
             ('workspace_invitations', 'workspace_id'),
             ('sessions', 'active_workspace_id'),
-            ('canvases', 'yjs_state'), ('canvases', 'snapshot'))`;
+            ('canvases', 'yjs_state'), ('canvases', 'snapshot'),
+            ('runs', 'snapshot'), ('runs', 'created_by'), ('runs', 'created_at'),
+            ('node_runs', 'provider'))`;
       const types = Object.fromEntries(
         columns.map((c) => [`${c.table_name}.${c.column_name}`, c.data_type]),
       );
@@ -68,6 +72,10 @@ describe.skipIf(!baseUrl)("migrations", () => {
         "sessions.active_workspace_id": "text",
         "canvases.yjs_state": "bytea",
         "canvases.snapshot": "jsonb",
+        "runs.snapshot": "jsonb",
+        "runs.created_by": "uuid",
+        "runs.created_at": "timestamp with time zone",
+        "node_runs.provider": "text",
       });
 
       // A canvas cannot claim a workspace other than its project's (composite foreign key).

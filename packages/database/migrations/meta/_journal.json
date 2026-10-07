@@ -15,6 +15,13 @@
       "when": 1791181022834,
       "tag": "0001_p1_projects_canvases",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791341074782,
+      "tag": "0002_concerned_fabian_cortez",
+      "breakpoints": true
     }
   ]
 }
