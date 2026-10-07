@@ -75,6 +75,42 @@ describe("gateway realtime tickets", () => {
     );
     expect(badBody.status).toBe(400);
 
+    // 400 with missing IDs
+    const missingIds = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(missingIds.status).toBe(400);
+
+    // 400 with both IDs
+    const bothIds = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId,
+          agentRunId: "a0000000-0000-4000-8000-000000000001",
+        }),
+      },
+    );
+    expect(bothIds.status).toBe(400);
+
+    // 400 with non-UUID agentRunId
+    const badAgentRunId = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentRunId: "not-a-uuid" }),
+      },
+    );
+    expect(badAgentRunId.status).toBe(400);
+
     // 200 with valid body
     const success = await authedFetch(
       `${gateway.url}/api/v1/realtime-tickets`,
@@ -510,5 +546,69 @@ describe("gateway realtime tickets", () => {
 
     expect(logBuffer).toContain("ticket=[redacted]");
     expect(logBuffer).not.toContain(secretTicket);
+  });
+
+  it("enforces Origin whitelist on agent realtime endpoint", async () => {
+    const { gateway } = await boot();
+    const agentRunId = "a0000000-0000-4000-8000-000000000001";
+    const issueRes = await authedFetch(
+      `${gateway.url}/api/v1/realtime-tickets`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentRunId }),
+      },
+    );
+    const { ticket } = (await issueRes.json()) as { ticket: string };
+
+    const url = `${gateway.url}/api/v1/realtime/agent/runs/${agentRunId}/events?ticket=${ticket}`;
+
+    // Forbidden Origin -> 403
+    const badOrigin = await fetch(url, {
+      headers: { Origin: "http://malicious.test" },
+    });
+    expect(badOrigin.status).toBe(403);
+
+    // Valid Origin succeeds (200)
+    const goodOrigin = await fetch(url, {
+      headers: { Origin: "http://localhost:3000" },
+    });
+    expect(goodOrigin.status).toBe(200);
+    expect(goodOrigin.headers.get("access-control-allow-origin")).toBe(
+      "http://localhost:3000",
+    );
+  });
+
+  it("issueRealtimeTicket function validates arguments strictly", async () => {
+    const { issueRealtimeTicket } = await import("../src/ticket");
+    // Missing both IDs
+    await expect(
+      issueRealtimeTicket({
+        secret: TICKET_SECRET,
+        userId: TEST_USER_ID,
+        baseUrl: "http://localhost:4000",
+      }),
+    ).rejects.toThrow(/Missing resource identifier/);
+
+    // Both IDs specified
+    await expect(
+      issueRealtimeTicket({
+        secret: TICKET_SECRET,
+        userId: TEST_USER_ID,
+        runId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+        agentRunId: "a0000000-0000-4000-8000-000000000001",
+        baseUrl: "http://localhost:4000",
+      }),
+    ).rejects.toThrow(/Cannot specify both/);
+
+    // Invalid agentRunId
+    await expect(
+      issueRealtimeTicket({
+        secret: TICKET_SECRET,
+        userId: TEST_USER_ID,
+        agentRunId: "invalid-uuid",
+        baseUrl: "http://localhost:4000",
+      }),
+    ).rejects.toThrow(/Invalid agentRunId format/);
   });
 });

@@ -24,6 +24,9 @@ export function extractResourceFromPath(pathname: string): string | null {
   return `run:${match[1]}`;
 }
 
+const UUID_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export async function issueRealtimeTicket(options: {
   secret: string;
   userId: string;
@@ -32,13 +35,26 @@ export async function issueRealtimeTicket(options: {
   resource?: string;
   baseUrl: string;
 }): Promise<RealtimeTicketResponse> {
+  if (options.runId && options.agentRunId) {
+    throw new Error("Cannot specify both runId and agentRunId");
+  }
+  if (!options.resource && !options.runId && !options.agentRunId) {
+    throw new Error(
+      "Missing resource identifier: runId or agentRunId is required",
+    );
+  }
+  if (options.runId && !UUID_REGEX.test(options.runId)) {
+    throw new Error("Invalid runId format: must be a valid UUID");
+  }
+  if (options.agentRunId && !UUID_REGEX.test(options.agentRunId)) {
+    throw new Error("Invalid agentRunId format: must be a valid UUID");
+  }
+
   const res =
     options.resource ??
     (options.agentRunId
       ? `agent-run:${options.agentRunId}`
-      : options.runId
-        ? `run:${options.runId}`
-        : "");
+      : `run:${options.runId}`);
   const jti = randomBytes(16).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
   const secretKey = new TextEncoder().encode(options.secret);
