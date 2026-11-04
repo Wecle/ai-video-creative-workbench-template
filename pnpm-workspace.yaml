@@ -3,19 +3,19 @@ packages:
   - "services/*"
   - "packages/*"
 catalog:
-  typescript: ^5.8.3
-  zod: ^4.0.10
+  typescript: ^7.0.2
+  zod: ^4.6.7
   yjs: ^13.6.33
-  vitest: ^4.1.11
-  tsup: ^8.5.0
-  ioredis: ^5.11.1
-  "@aws-sdk/client-s3": ^3.1147.0
-  "@aws-sdk/s3-request-presigner": ^3.1147.0
-  "@temporalio/activity": ^1.24.0
-  "@temporalio/client": ^1.24.0
-  "@temporalio/testing": ^1.24.0
-  "@temporalio/worker": ^1.24.0
-  "@temporalio/workflow": ^1.24.0
+  vitest: ^5.0.5
+  tsup: ^9.0.0
+  ioredis: ^6.0.0
+  "@aws-sdk/client-s3": ^3.1161.0
+  "@aws-sdk/s3-request-presigner": ^3.1161.0
+  "@temporalio/activity": ^1.25.0
+  "@temporalio/client": ^1.25.0
+  "@temporalio/testing": ^1.25.0
+  "@temporalio/worker": ^1.25.0
+  "@temporalio/workflow": ^1.25.0
 onlyBuiltDependencies:
   - esbuild
 overrides:
